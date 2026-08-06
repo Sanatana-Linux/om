@@ -1075,27 +1075,15 @@ pub fn blankLine() void {
 
 pub fn hello(machines: []const types.Machine) void {
     p("{s}{s}om\n\n", .{ KAO_FACE, hdr() });
-    for (machines) |m| {
-        const kind = if (m.local) "local" else "ssh";
-        const detail = if (m.local) "default" else m.host orelse "";
-        p("   {s}{s}{s}   {s}   {s}\n", .{ c(DIM), m.name, c(RESET), kind, detail });
-    }
-    p("\n", .{});
-    const quick = [_][2][]const u8{
-        .{ "apply", "rebuild and switch" },
-        .{ "search <q>", "find packages" },
-        .{ "install <pkg>", "add to profile or system" },
-        .{ "status", "machine health" },
-        .{ "back", "roll back one generation" },
-        .{ "home apply", "apply home config" },
-        .{ "home back", "roll back home config" },
-        .{ "home history", "list home generations" },
-        .{ "home check", "validate home config" },
-        .{ "home diff", "compare home generations" },
-        .{ "home packages", "list managed packages" },
-    };
-    for (quick) |cmd| {
-        p("   {s:<16}  {s}{s}{s}\n", .{ cmd[0], c(DIM), cmd[1], c(RESET) });
+    if (machines.len == 0) {
+        p("   {s}no machines configured{s}\n", .{ c(DIM), c(RESET) });
+        p("   {s}run om setup or edit ~/.config/om/config to add one{s}\n", .{ c(DIM), c(RESET) });
+    } else {
+        for (machines) |m| {
+            const kind = if (m.local) "local" else "ssh";
+            const detail = if (m.local) "default" else m.host orelse "";
+            p("   {s}{s}{s}   {s}   {s}\n", .{ c(DIM), m.name, c(RESET), kind, detail });
+        }
     }
     p("\n", .{});
 }
@@ -1105,57 +1093,18 @@ pub fn hello(machines: []const types.Machine) void {
 pub fn help() void {
     p("{s}om  {s}NixOS Intuitive Navigation Assistant by Asha Software{s}\n\n", .{ hdr(), c(DIM), c(RESET) });
     const cmds = [_][2][]const u8{
-        .{ "apply", "rebuild and switch" },
-        .{ "back", "roll back one generation" },
-        .{ "go <n>", "switch to generation n" },
-        .{ "history", "list all generations" },
-        .{ "clean", "remove old generations" },
-        .{ "sync", "commit and push config submodules" },
-        .{ "search <q>", "find packages" },
-        .{ "install <pkg>", "add to profile or system" },
-        .{ "remove <pkg>", "remove from profile or system" },
-        .{ "try <pkg>", "test without installing" },
-        .{ "list", "show installed packages" },
-        .{ "edit", "open configuration.nix" },
-        .{ "edit --dir", "open config directory" },
-        .{ "check", "validate config" },
-        .{ "diff", "changes between generations" },
-        .{ "status", "machine health" },
-        .{ "update", "refresh channels" },
-        .{ "upgrade", "update and rebuild" },
-        .{ "log", "operation history" },
-        .{ "doctor", "diagnose issues" },
-        .{ "mood", "plain-language health" },
-        .{ "develop", "enter dev shell" },
-        .{ "flake", "flake management" },
-        .{ "build", "build a package" },
-        .{ "run", "run without installing" },
-        .{ "service", "manage services" },
-        .{ "store", "nix store tools" },
-        .{ "optimize", "nix store optimise (deduplicate the store)" },
-        .{ "repair", "nix store repair --all (verify and fix the store)" },
-        .{ "channel", "manage channels" },
-        .{ "profile", "user profile packages" },
-        .{ "home", "home manager commands (apply/back/history/edit/check/diff/packages)" },
-        .{ "info", "system information" },
         .{ "boot", "boot entries" },
-        .{ "fmt", "format configuration.nix" },
-        .{ "repl", "nix repl with nixpkgs" },
-        .{ "option <q>", "search nixos options" },
-        .{ "options <q>", "search nixos + home-manager options" },
-        .{ "cache <pkg>", "check store cache status of a package" },
-        .{ "tree <pkg>", "show what depends on a package (nix-tree)" },
-        .{ "weight [name]", "system closure size in GB" },
-        .{ "pkg", "inspect packages" },
-        .{ "why <pkg>", "what pulled a package in" },
-        .{ "pin <input> <rev>", "pin a flake input to a commit" },
-        .{ "unpin <input>", "release a pinned flake input (nix flake update)" },
-        .{ "hash", "compute nix hash" },
-        .{ "fetch", "fetch and hash a url" },
-        .{ "goodbye", "uninstall om" },
-        .{ "hello", "list machines" },
-        .{ "man [topic]", "open the built-in manual pager" },
+        .{ "check", "system checks (local/doctor/mood/fmt/info/log/status)" },
+        .{ "flake", "flake management (apply/upgrade/init/update/check/show/lock/clone/pin/unpin)" },
+        .{ "gen", "generation management (back/go/history/diff/delete/current/list)" },
         .{ "help", "this message" },
+        .{ "home", "home manager commands" },
+        .{ "man [topic]", "open the built-in manual pager" },
+        .{ "pkg", "package tools (info/build/cache/why/try/tree/deps/size/path/closure/search/options/develop/repl/run)" },
+        .{ "profile", "profile package management (info/install/remove/upgrade)" },
+        .{ "service", "manage services" },
+        .{ "store", "nix store tools (weight/path/clean/optimise/verify/repair/fetch/hash)" },
+        .{ "sync", "commit and push config submodules" },
     };
     for (cmds) |cmd| {
         p("   {s:<18}  {s}{s}{s}\n", .{ cmd[0], c(DIM), cmd[1], c(RESET) });

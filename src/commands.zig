@@ -65,6 +65,28 @@ fn runPostHook(ctx: Ctx, hook_name: []const u8) void {
     }
 }
 
+const check_help = [_][2][]const u8{
+    .{ "doctor", "diagnose common issues" },
+    .{ "fmt", "format nix files" },
+    .{ "info", "system information" },
+    .{ "local", "validate config without switching" },
+    .{ "log", "operation history" },
+    .{ "mood", "plain-language health summary" },
+    .{ "status", "machine health at a glance" },
+};
+
+pub fn checkCmd(ctx: Ctx) !void {
+    if (ctx.sub.len == 0 or std.mem.eql(u8, ctx.sub, "help")) return output.subcommandHelp("check", &check_help, null);
+    if (std.mem.eql(u8, ctx.sub, "local")) return checkLocal(ctx);
+    if (std.mem.eql(u8, ctx.sub, "doctor")) return doctor(ctx);
+    if (std.mem.eql(u8, ctx.sub, "mood")) return mood(ctx);
+    if (std.mem.eql(u8, ctx.sub, "fmt")) return fmt(ctx);
+    if (std.mem.eql(u8, ctx.sub, "info")) return info(ctx);
+    if (std.mem.eql(u8, ctx.sub, "log")) return log(ctx);
+    if (std.mem.eql(u8, ctx.sub, "status")) return statusCmd(ctx);
+    return output.subcommandHelp("check", &check_help, null);
+}
+
 pub fn apply(ctx: Ctx) !void {
     if (ctx.dry) {
         output.applyDry(ctx.machine.name);
@@ -74,7 +96,7 @@ pub fn apply(ctx: Ctx) !void {
         return;
     }
     if (ctx.check) {
-        return check(ctx);
+        return checkLocal(ctx);
     }
 
     if (!try runPreHook(ctx, "pre-apply")) {
@@ -115,7 +137,7 @@ pub fn apply(ctx: Ctx) !void {
     logAction(ctx, "apply", gen);
 }
 
-pub fn check(ctx: Ctx) !void {
+pub fn checkLocal(ctx: Ctx) !void {
     output.checkStart(ctx.machine.name);
     const code = try exec.nixosRebuildBuild(ctx.io, &ctx.machine, ctx.gpa, ctx.passthrough);
     if (code != 0) return error.BuildFailed;
@@ -187,15 +209,19 @@ pub fn history(ctx: Ctx) !void {
 }
 
 const gen_help = [_][2][]const u8{
-    .{ "list", "list generations" },
+    .{ "back", "roll back to the previous generation" },
     .{ "current", "show current generation" },
     .{ "delete <n>", "delete generation n" },
     .{ "delete old", "delete old generations" },
+    .{ "diff", "compare generations" },
+    .{ "go <n>", "switch to generation n" },
+    .{ "history", "list all generations" },
+    .{ "list", "list generations" },
 };
 
 pub fn genCmd(ctx: Ctx) !void {
     if (ctx.sub.len == 0 or std.mem.eql(u8, ctx.sub, "help")) return output.subcommandHelp("gen", &gen_help, null);
-    if (std.mem.eql(u8, ctx.sub, "list")) return history(ctx);
+    if (std.mem.eql(u8, ctx.sub, "back")) return back(ctx);
     if (std.mem.eql(u8, ctx.sub, "current")) {
         const n = try exec.getCurrentGeneration(ctx.gpa, ctx.io, &ctx.machine);
         output.genCurrent(n);
@@ -214,7 +240,11 @@ pub fn genCmd(ctx: Ctx) !void {
         output.done();
         return;
     }
-    return error.Internal;
+    if (std.mem.eql(u8, ctx.sub, "diff")) return diff(ctx);
+    if (std.mem.eql(u8, ctx.sub, "go")) return go(ctx);
+    if (std.mem.eql(u8, ctx.sub, "history")) return history(ctx);
+    if (std.mem.eql(u8, ctx.sub, "list")) return history(ctx);
+    return output.subcommandHelp("gen", &gen_help, null);
 }
 
 pub fn clean(ctx: Ctx) !void {
@@ -1394,15 +1424,15 @@ pub fn tryCmd(ctx: Ctx) !void {
 // --- Home Manager commands ---
 
 const home_help = [_][2][]const u8{
-    .{ "init", "set up home manager for the first time" },
-    .{ "init --switch", "set up and activate immediately" },
     .{ "apply", "apply home-manager configuration" },
     .{ "apply --dry", "preview changes without activating" },
     .{ "back", "roll back one generation" },
-    .{ "history", "list all generations" },
-    .{ "edit", "open home.nix" },
     .{ "check", "validate without applying" },
     .{ "diff", "compare the latest two generations" },
+    .{ "edit", "open home.nix" },
+    .{ "history", "list all generations" },
+    .{ "init", "set up home manager for the first time" },
+    .{ "init --switch", "set up and activate immediately" },
     .{ "packages", "list managed packages" },
 };
 
@@ -1771,14 +1801,14 @@ fn homeApplyFlake(ctx: Ctx, dir: []const u8) !void {
 // --- Service commands ---
 
 const service_help = [_][2][]const u8{
+    .{ "disable <svc>", "disable at boot" },
+    .{ "enable <svc>", "enable at boot" },
     .{ "list", "list running services" },
     .{ "logs <svc>", "show service logs" },
-    .{ "status <svc>", "service status" },
-    .{ "start <svc>", "start a service" },
-    .{ "stop <svc>", "stop a service" },
     .{ "restart <svc>", "restart a service" },
-    .{ "enable <svc>", "enable at boot" },
-    .{ "disable <svc>", "disable at boot" },
+    .{ "start <svc>", "start a service" },
+    .{ "status <svc>", "service status" },
+    .{ "stop <svc>", "stop a service" },
 };
 
 // Verbs service() is willing to forward to `sudo systemctl`. Anything else
@@ -1864,13 +1894,17 @@ fn subcommandKnown(help_rows: []const [2][]const u8, sub: []const u8) bool {
 // --- Flake commands ---
 
 const flake_help = [_][2][]const u8{
+    .{ "apply", "rebuild and switch to the new configuration" },
+    .{ "check", "validate the flake" },
+    .{ "clone <url>", "clone a flake repository" },
     .{ "init", "create a new flake.nix" },
+    .{ "lock", "regenerate flake.lock" },
+    .{ "pin <input> <rev>", "pin a flake input to a commit" },
+    .{ "show", "inspect flake outputs" },
+    .{ "unpin <input>", "release a pinned flake input" },
     .{ "update", "update flake inputs" },
     .{ "update <in>", "update a specific input" },
-    .{ "check", "validate the flake" },
-    .{ "show", "inspect flake outputs" },
-    .{ "lock", "regenerate flake.lock" },
-    .{ "clone <url>", "clone a flake repository" },
+    .{ "upgrade", "update flake inputs and rebuild" },
 };
 
 pub fn flake(ctx: Ctx) !void {
@@ -1938,22 +1972,28 @@ pub fn flake(ctx: Ctx) !void {
         _ = try exec.flakeClone(ctx.io, &ctx.machine, ctx.gpa, url);
         return;
     }
+    if (std.mem.eql(u8, ctx.sub, "apply")) return apply(ctx);
+    if (std.mem.eql(u8, ctx.sub, "upgrade")) return upgrade(ctx);
+    if (std.mem.eql(u8, ctx.sub, "pin")) return pin(ctx);
+    if (std.mem.eql(u8, ctx.sub, "unpin")) return unpin(ctx);
 }
 
 // --- Store commands ---
 
 const store_help = [_][2][]const u8{
-    .{ "info", "store size and counts" },
-    .{ "path <attr>", "store path of a package" },
-    .{ "gc", "collect garbage" },
+    .{ "clean", "collect garbage and free store space" },
+    .{ "fetch", "fetch and hash a url" },
+    .{ "hash", "compute nix hash" },
     .{ "optimise", "deduplicate store paths with hard links" },
-    .{ "verify", "verify store integrity" },
+    .{ "path <attr>", "store path of a package" },
     .{ "repair", "repair corrupted paths" },
+    .{ "verify", "verify store integrity" },
+    .{ "weight", "store size and counts" },
 };
 
 pub fn store(ctx: Ctx) !void {
     if (ctx.sub.len == 0 or std.mem.eql(u8, ctx.sub, "help")) return output.subcommandHelp("store", &store_help, null);
-    if (std.mem.eql(u8, ctx.sub, "gc")) {
+    if (std.mem.eql(u8, ctx.sub, "clean")) {
         _ = try exec.storeGc(ctx.io, &ctx.machine, ctx.gpa);
         return;
     }
@@ -1975,7 +2015,7 @@ pub fn store(ctx: Ctx) !void {
         _ = try exec.storeRepair(ctx.io, &ctx.machine, ctx.gpa);
         return;
     }
-    if (std.mem.eql(u8, ctx.sub, "info")) {
+    if (std.mem.eql(u8, ctx.sub, "weight")) {
         const si = try exec.storeInfo(ctx.gpa, ctx.io, &ctx.machine);
         output.storeInfo(si);
         return;
@@ -1987,7 +2027,9 @@ pub fn store(ctx: Ctx) !void {
         output.storePath(path);
         return;
     }
-    // default: info
+    if (std.mem.eql(u8, ctx.sub, "fetch")) return fetch(ctx);
+    if (std.mem.eql(u8, ctx.sub, "hash")) return hash(ctx);
+    // default: weight
     const si = try exec.storeInfo(ctx.gpa, ctx.io, &ctx.machine);
     output.storeInfo(si);
 }
@@ -2064,7 +2106,7 @@ pub fn channel(ctx: Ctx) !void {
 // --- Profile commands ---
 
 const profile_help = [_][2][]const u8{
-    .{ "list", "list profile packages" },
+    .{ "info", "list profile packages" },
     .{ "install <attr>", "install a package into your profile" },
     .{ "remove <attr>", "remove a package from your profile" },
     .{ "upgrade", "upgrade all profile packages" },
@@ -2076,7 +2118,7 @@ pub fn profile(ctx: Ctx) !void {
         output.subcommandHelp("profile", &profile_help, null);
         return error.Internal;
     }
-    if (std.mem.eql(u8, ctx.sub, "list") or ctx.sub.len == 0) {
+    if (std.mem.eql(u8, ctx.sub, "info") or ctx.sub.len == 0) {
         output.profileListHeader();
         const out = exec.profileList(ctx.gpa, ctx.io, &ctx.machine) catch null;
         if (out) |o| {
@@ -2112,11 +2154,21 @@ pub fn profile(ctx: Ctx) !void {
 // --- Pkg commands ---
 
 const pkg_help = [_][2][]const u8{
-    .{ "why <pkg>", "what pulled it in" },
-    .{ "deps <pkg>", "direct dependencies" },
-    .{ "size <pkg>", "closure size" },
-    .{ "path <pkg>", "store path" },
+    .{ "build", "build a package" },
+    .{ "cache <pkg>", "check store cache status of a package" },
     .{ "closure <pkg>", "full closure" },
+    .{ "deps <pkg>", "direct dependencies" },
+    .{ "develop", "enter dev shell" },
+    .{ "info", "list installed packages" },
+    .{ "options <q>", "search nixos + home-manager options" },
+    .{ "path <pkg>", "store path" },
+    .{ "repl", "nix repl with nixpkgs" },
+    .{ "run <pkg>", "run a package without installing" },
+    .{ "search <q>", "find packages" },
+    .{ "size <pkg>", "closure size" },
+    .{ "tree <pkg>", "show what depends on a package" },
+    .{ "try <pkg>", "run a package without installing" },
+    .{ "why <pkg>", "what pulled it in" },
 };
 
 pub fn pkg(ctx: Ctx) !void {
@@ -2125,11 +2177,17 @@ pub fn pkg(ctx: Ctx) !void {
         output.subcommandHelp("pkg", &pkg_help, null);
         return error.Internal;
     }
-    const name = if (ctx.args.len > 0) ctx.args[0] else return error.PackageNotFound;
+    if (std.mem.eql(u8, ctx.sub, "info")) return list(ctx);
+    if (std.mem.eql(u8, ctx.sub, "build")) return build(ctx);
+    if (std.mem.eql(u8, ctx.sub, "cache")) return cacheCmd(ctx);
     if (std.mem.eql(u8, ctx.sub, "why")) {
+        const name = if (ctx.args.len > 0) ctx.args[0] else return error.PackageNotFound;
         if (try exec.pkgWhy(ctx.io, &ctx.machine, ctx.gpa, name) != 0) return error.PackageNotFound;
         return;
     }
+    if (std.mem.eql(u8, ctx.sub, "try")) return tryCmd(ctx);
+    if (std.mem.eql(u8, ctx.sub, "tree")) return treeCmd(ctx);
+    const name = if (ctx.args.len > 0) ctx.args[0] else return error.PackageNotFound;
     if (std.mem.eql(u8, ctx.sub, "deps")) {
         if (try exec.pkgDeps(ctx.io, &ctx.machine, ctx.gpa, name) != 0) return error.PackageNotFound;
         return;
@@ -2150,6 +2208,11 @@ pub fn pkg(ctx: Ctx) !void {
         if (try exec.pkgClosure(ctx.io, &ctx.machine, ctx.gpa, name) != 0) return error.PackageNotFound;
         return;
     }
+    if (std.mem.eql(u8, ctx.sub, "search")) return searchCmd(ctx);
+    if (std.mem.eql(u8, ctx.sub, "options")) return optionsCmd(ctx);
+    if (std.mem.eql(u8, ctx.sub, "develop")) return develop(ctx);
+    if (std.mem.eql(u8, ctx.sub, "repl")) return repl(ctx);
+    if (std.mem.eql(u8, ctx.sub, "run")) return runCmd(ctx);
 }
 
 test "subcommandKnown rejects a garbage subcommand for each of flake/channel/profile/pkg" {

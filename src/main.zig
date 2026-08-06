@@ -216,60 +216,16 @@ fn reportError(err: anyerror, allocator: std.mem.Allocator) void {
 }
 
 fn dispatch(ctx: commands.Ctx, cmd: []const u8) !void {
-    if (std.mem.eql(u8, cmd, "apply")) return commands.apply(ctx);
-    if (std.mem.eql(u8, cmd, "check")) return commands.check(ctx);
-    if (std.mem.eql(u8, cmd, "back")) return commands.back(ctx);
-    if (std.mem.eql(u8, cmd, "go")) return commands.go(ctx);
-    if (std.mem.eql(u8, cmd, "history")) return commands.history(ctx);
     if (std.mem.eql(u8, cmd, "gen")) return commands.genCmd(ctx);
-    if (std.mem.eql(u8, cmd, "clean")) return commands.clean(ctx);
     if (std.mem.eql(u8, cmd, "sync")) return commands.syncCmd(ctx);
-    if (std.mem.eql(u8, cmd, "status")) return commands.statusCmd(ctx);
-    if (std.mem.eql(u8, cmd, "weight")) return commands.weightCmd(ctx);
-    if (std.mem.eql(u8, cmd, "diff")) return commands.diff(ctx);
-    if (std.mem.eql(u8, cmd, "doctor")) return commands.doctor(ctx);
-    if (std.mem.eql(u8, cmd, "mood")) return commands.mood(ctx);
-    if (std.mem.eql(u8, cmd, "update")) return commands.update(ctx);
-    if (std.mem.eql(u8, cmd, "upgrade")) return commands.upgrade(ctx);
-    if (std.mem.eql(u8, cmd, "log")) return commands.log(ctx);
-    if (std.mem.eql(u8, cmd, "edit")) return commands.edit(ctx);
-    if (std.mem.eql(u8, cmd, "fmt")) return commands.fmt(ctx);
-    if (std.mem.eql(u8, cmd, "repl")) return commands.repl(ctx);
-    if (std.mem.eql(u8, cmd, "develop")) return commands.develop(ctx);
-    if (std.mem.eql(u8, cmd, "info")) return commands.info(ctx);
-    if (std.mem.eql(u8, cmd, "boot")) return commands.boot(ctx);
-    if (std.mem.eql(u8, cmd, "search")) return commands.searchCmd(ctx);
-    if (std.mem.eql(u8, cmd, "option")) return commands.optionCmd(ctx);
-    if (std.mem.eql(u8, cmd, "options")) return commands.optionsCmd(ctx);
-    if (std.mem.eql(u8, cmd, "cache")) return commands.cacheCmd(ctx);
-    if (std.mem.eql(u8, cmd, "install")) return commands.install(ctx);
-    if (std.mem.eql(u8, cmd, "remove")) return commands.remove(ctx);
-    if (std.mem.eql(u8, cmd, "list")) return commands.list(ctx);
-    if (std.mem.eql(u8, cmd, "try")) return commands.tryCmd(ctx);
     if (std.mem.eql(u8, cmd, "service")) return commands.service(ctx);
-    // `om flake update` is handled here (sub="update") — the existing flake
-    // command already updates the flake inputs, so no separate top-level
-    // dispatch is needed. commands.flakeUpdateCmd is the standalone alias that
-    // targets /etc/nixos specifically.
+    if (std.mem.eql(u8, cmd, "check")) return commands.checkCmd(ctx);
     if (std.mem.eql(u8, cmd, "flake")) return commands.flake(ctx);
     if (std.mem.eql(u8, cmd, "store")) return commands.store(ctx);
-    // Top-level aliases: `om optimize` / `om repair` for the store subcommands.
-    if (std.mem.eql(u8, cmd, "optimize")) return commands.optimizeCmd(ctx);
-    if (std.mem.eql(u8, cmd, "repair")) return commands.repairCmd(ctx);
-    if (std.mem.eql(u8, cmd, "channel")) return commands.channel(ctx);
     if (std.mem.eql(u8, cmd, "profile")) return commands.profile(ctx);
     if (std.mem.eql(u8, cmd, "pkg")) return commands.pkg(ctx);
-    if (std.mem.eql(u8, cmd, "why")) return commands.why(ctx);
-    if (std.mem.eql(u8, cmd, "tree")) return commands.treeCmd(ctx);
-    if (std.mem.eql(u8, cmd, "pin")) return commands.pin(ctx);
-    if (std.mem.eql(u8, cmd, "unpin")) return commands.unpin(ctx);
-    if (std.mem.eql(u8, cmd, "hash")) return commands.hash(ctx);
-    if (std.mem.eql(u8, cmd, "fetch")) return commands.fetch(ctx);
-    if (std.mem.eql(u8, cmd, "build")) return commands.build(ctx);
-    if (std.mem.eql(u8, cmd, "run")) return commands.runCmd(ctx);
     if (std.mem.eql(u8, cmd, "home")) return commands.home(ctx);
-    if (std.mem.eql(u8, cmd, "goodbye")) return commands.goodbye(ctx);
-    if (std.mem.eql(u8, cmd, "hello")) return commands.hello(ctx);
+    if (std.mem.eql(u8, cmd, "boot")) return commands.boot(ctx);
     if (std.mem.eql(u8, cmd, "help")) {
         output.help();
         return;
@@ -363,7 +319,7 @@ fn parseArgs(arena: std.mem.Allocator, argv: []const [:0]const u8) !Args {
 }
 
 fn isMultiWord(cmd: []const u8) bool {
-    const multi = [_][]const u8{ "service", "flake", "store", "channel", "profile", "pkg", "gen", "develop", "edit", "home" };
+    const multi = [_][]const u8{ "service", "flake", "store", "profile", "pkg", "gen", "develop", "home", "check" };
     for (multi) |m| {
         if (std.mem.eql(u8, cmd, m)) return true;
     }

@@ -1965,7 +1965,8 @@ pub fn runDoctorChecks(gpa: std.mem.Allocator, io: std.Io, machine: *const types
         defer gpa.free(r.stdout);
         defer gpa.free(r.stderr);
         const active = std.mem.indexOf(u8, r.stdout, "active") != null;
-        try checks.append(gpa, .{ .name = "nix daemon", .status = if (active) .ok else .fail });
+        const note: ?[]const u8 = if (active) null else std.mem.trim(u8, r.stdout, " \t\n\r");
+        try checks.append(gpa, .{ .name = "nix daemon", .status = if (active) .ok else .fail, .note = note });
     }
 
     // Check config syntax. Flake-aware like apply/upgrade: on a flake system a
@@ -1982,16 +1983,12 @@ pub fn runDoctorChecks(gpa: std.mem.Allocator, io: std.Io, machine: *const types
         const r = try capture(gpa, io, machine, argv);
         defer gpa.free(r.stdout);
         defer gpa.free(r.stderr);
-        try checks.append(gpa, .{ .name = "config syntax", .status = if (r.exit_code == 0) .ok else .fail });
-    }
-
-    // Check channel
-    {
-        const r = try capture(gpa, io, machine, &.{ "nix-channel", "--list" });
-        defer gpa.free(r.stdout);
-        defer gpa.free(r.stderr);
-        const has_channel = r.exit_code == 0 and r.stdout.len > 0;
-        try checks.append(gpa, .{ .name = "channel", .status = if (has_channel) .ok else .warn });
+        const ok = r.exit_code == 0;
+        const note = if (ok) "" else blk: {
+            const inner = errors.innermostError(r.stderr) orelse r.stderr;
+            break :blk std.mem.trim(u8, inner, " \t\n\r");
+        };
+        try checks.append(gpa, .{ .name = "config syntax", .status = if (ok) .ok else .fail, .note = note });
     }
 
     return checks.toOwnedSlice(gpa);

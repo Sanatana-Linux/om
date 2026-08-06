@@ -140,7 +140,7 @@ fn lineWith(text: []const u8, pattern: []const u8) ?[]const u8 {
 }
 
 // Extract the innermost error: last "error: ..." line before "For full logs".
-fn innermostError(text: []const u8) ?[]const u8 {
+pub fn innermostError(text: []const u8) ?[]const u8 {
     var last: ?[]const u8 = null;
     var it = std.mem.splitScalar(u8, text, '\n');
     while (it.next()) |line| {

@@ -1,0 +1,22 @@
+# Zig build artifacts
+zig-out/
+.zig-cache/
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Nix build result symlink
+result/
+
+# OpenCode session state (gitignored per project convention)
+.opencode/state/
+.opencode/cache/
+
+# Editor / OS detritus
+.DS_Store
+*.swp
+*.swo
+*~

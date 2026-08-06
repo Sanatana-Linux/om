@@ -2,110 +2,177 @@
 
 **NixOS Operations Manager** — a fork of [nina](https://kepr.uk/nina) by [Asha Software](https://asha.software).
 
-om wraps the full NixOS workflow in plain, memorable verbs — packages, rebuilds, generations, flakes, services, remote machines. Written in Zig. Zero dependencies. One binary.
+om is the central interface for interacting with Nix on NixOS. It wraps the full NixOS workflow — rebuilds, generations, flakes, packages, services, store management — into a single, memorable command vocabulary. Written in Zig. Zero dependencies. One binary.
+
+The goal is simple: stop needing to remember the sprawling nix ecosystem command set. Instead of juggling `nixos-rebuild`, `nix profile`, `nix store`, `nix flake`, `nix search`, `nix why-depends`, `nix-tree`, `nix-collect-garbage`, and a dozen more — you just use `om`.
 
 ```
-$ om search ripgrep
-$ om apply
-$ om back
-$ om status --all
+$ om pkg search ripgrep
+$ om flake apply
+$ om gen back
+$ om check status
 ```
 
 ---
 
 ## install
 
-**nix profile** (recommended — instant, per-user, no `sudo`):
+om is primarily intended for use with [nixos-config](https://github.com/Sanatana-Linux/nixos-config). Add it as a flake input:
 
-```sh
-nix profile add 'https://kepr.uk/nina/archive/HEAD.tar.gz#nina'
+```nix
+# flake.nix
+{
+  inputs.om.url = "github:Sanatana-Linux/om";
+
+  outputs = { self, nixpkgs, om, ... }: {
+    nixosConfigurations.your-host = nixpkgs.lib.nixosSystem {
+      modules = [
+        om.nixosModules.om
+        # ...
+      ];
+    };
+  };
+}
 ```
 
-Remove any time with `om goodbye`.
+This installs `om` system-wide via `environment.systemPackages`.
 
-**koh** (build from source via koh):
-
-```sh
-koh steal kepr.uk/nina
-cd nina && zig build -Doptimize=ReleaseFast
-sudo cp zig-out/bin/om /usr/local/bin/om
-```
-
-**source archive** (download and build manually):
-
-Download the source archive from [kepr.uk/nina/releases](https://kepr.uk/nina/releases), then:
+**Build from source** (standalone):
 
 ```sh
-tar xf nina-*.tar.gz && cd nina-*/
-zig build -Doptimize=ReleaseFast
-sudo cp zig-out/bin/om /usr/local/bin/om
+git clone https://github.com/Sanatana-Linux/om
+cd om
+nix build
+sudo cp result/bin/om /usr/local/bin/om
 ```
 
-**linux · nixos 24.05+** — requires `nix-command` and `flakes` experimental features.  
-Run `om setup` on first use to enable them automatically.
+Requires `nix-command` and `flakes` experimental features.
 
 ---
 
-## the commands you'll actually use
+## command structure
 
-```
-om apply           rebuild and switch to the new configuration
-om apply --dry     preview what would change without switching
-om back            roll back to the previous generation
-om go <n>          jump to any generation by number
-om history         list all generations
-om clean           remove old generations and free store space
-om sync            commit and push config submodules
-om optimize        deduplicate the nix store
-om repair          verify and repair the nix store
+Commands are organized into subcommand groups. Each group collects related functionality under a single top-level verb.
 
-om search <q>      search nixpkgs inline — browse, install, or try
-om option <q>      search NixOS options inline
-om options <q>     search NixOS + home-manager options
-om install <p>     add a package — profile (instant) or system config
-om remove <p>      remove a package from profile or system config
-om try <p>         run a package without installing it
-om list            show installed packages
-om cache <pkg>     check store cache status of a package
+### system checks — `om check`
 
-om home apply      apply home-manager config
-om home back       roll back one home-manager generation
-om home history    list home-manager generations
-om home edit       open home.nix
-om home check      validate home config without switching
-om home diff       compare the latest two home generations
-om home packages   list packages managed by home-manager
+| Subcommand   | Description                              |
+| ------------ | ---------------------------------------- |
+| `doctor`     | diagnose common issues                   |
+| `fmt`        | format nix files                         |
+| `info`       | nixos version, kernel, uptime            |
+| `local`      | validate config without switching        |
+| `log`        | operation history                        |
+| `mood`       | plain-language health summary            |
+| `status`     | machine health at a glance               |
 
-om status          machine health at a glance
-om status --all    health across every configured machine
-om doctor          diagnose common issues
-om diff            what changed between generations
-om log             operation history
+### flake management — `om flake`
 
-om service list    list systemd services and their state
-om service logs <s> journal logs for a service
-om service start/stop/restart <s>
+| Subcommand              | Description                              |
+| ----------------------- | ---------------------------------------- |
+| `apply`                 | rebuild and switch to the new config     |
+| `check`                 | validate the flake                       |
+| `clone <url>`           | clone a flake repository                 |
+| `init`                  | create a new flake.nix                   |
+| `lock`                  | regenerate flake.lock                    |
+| `pin <input> <rev>`     | pin a flake input to a commit            |
+| `show`                  | inspect flake outputs                    |
+| `unpin <input>`         | release a pinned flake input              |
+| `update`                | update flake inputs                      |
+| `update <in>`           | update a specific input                  |
+| `upgrade`               | update flake inputs and rebuild          |
 
-om flake show      inspect flake outputs
-om flake update    update lock files
-om pin <in> <rev>  pin a flake input to a commit
-om unpin <in>      release a pinned flake input
-om develop         enter a dev shell
-om build           build a flake output
-om run <p>         run a package without installing
-om tree <pkg>      show what depends on a package
-om weight [name]   system closure size in GB
+### generation management — `om gen`
 
-om edit            open configuration.nix in your editor
-om edit --dir      open the config directory in your editor
-om check           validate config without switching
-om fmt             format nix files
-om info            nixos version, kernel, uptime
-om boot            boot entries
+| Subcommand      | Description                              |
+| --------------- | ---------------------------------------- |
+| `back`          | roll back to the previous generation     |
+| `current`       | show current generation number           |
+| `delete <n>`    | delete generation n                      |
+| `delete old`    | delete all old generations               |
+| `diff`          | compare generations                      |
+| `go <n>`        | switch to generation n                   |
+| `history`       | list all generations                     |
+| `list`          | list generations                         |
 
-om help            all commands
-om --version       version info
-```
+### package tools — `om pkg`
+
+| Subcommand        | Description                              |
+| ----------------- | ---------------------------------------- |
+| `build`           | build a package                          |
+| `cache <pkg>`     | check store cache status of a package    |
+| `closure <pkg>`   | full closure                             |
+| `deps <pkg>`      | direct dependencies                      |
+| `develop`         | enter dev shell                          |
+| `info`            | list installed packages                  |
+| `options <q>`     | search nixos + home-manager options      |
+| `path <pkg>`      | store path                               |
+| `repl`            | nix repl with nixpkgs                    |
+| `run <pkg>`       | run a package without installing         |
+| `search <q>`      | find packages                            |
+| `size <pkg>`      | closure size                             |
+| `tree <pkg>`      | show what depends on a package           |
+| `try <pkg>`       | run a package in an interactive shell    |
+| `why <pkg>`       | what pulled a package in                 |
+
+### profile management — `om profile`
+
+| Subcommand          | Description                              |
+| ------------------- | ---------------------------------------- |
+| `info`              | list profile packages                    |
+| `install <attr>`    | install a package into your profile      |
+| `remove <attr>`     | remove a package from your profile       |
+| `upgrade`           | upgrade all profile packages             |
+
+### store tools — `om store`
+
+| Subcommand        | Description                              |
+| ----------------- | ---------------------------------------- |
+| `clean`           | collect garbage and free store space     |
+| `fetch`           | fetch and hash a url                     |
+| `hash`            | compute nix hash                         |
+| `optimise`        | deduplicate store paths with hard links  |
+| `path <attr>`     | store path of a package                  |
+| `repair`          | repair corrupted paths                   |
+| `verify`          | verify store integrity                   |
+| `weight`          | store size and counts                    |
+
+### services — `om service`
+
+| Subcommand        | Description                              |
+| ----------------- | ---------------------------------------- |
+| `disable <svc>`   | disable at boot                          |
+| `enable <svc>`    | enable at boot                           |
+| `list`            | list running services                    |
+| `logs <svc>`      | show service logs                        |
+| `restart <svc>`   | restart a service                        |
+| `start <svc>`     | start a service                          |
+| `status <svc>`    | service status                           |
+| `stop <svc>`      | stop a service                           |
+
+### home manager — `om home`
+
+| Subcommand        | Description                              |
+| ----------------- | ---------------------------------------- |
+| `apply`           | apply home-manager configuration         |
+| `apply --dry`     | preview changes without activating       |
+| `back`            | roll back one generation                 |
+| `check`           | validate without applying                |
+| `diff`            | compare the latest two generations       |
+| `edit`            | open home.nix                            |
+| `history`         | list all generations                     |
+| `init`            | set up home manager for the first time   |
+| `init --switch`   | set up and activate immediately          |
+| `packages`        | list managed packages                    |
+
+### other top-level commands
+
+| Command              | Description                              |
+| -------------------- | ---------------------------------------- |
+| `boot`               | boot entries                             |
+| `help`               | this message                             |
+| `man [topic]`        | open the built-in manual pager           |
+| `sync`               | commit and push config submodules        |
 
 ---
 
@@ -126,12 +193,12 @@ If a pre-hook exits non-zero, om shows the last five output lines and asks
 whether to continue, defaulting to no. If a post-hook exits non-zero, om shows
 a warning after the command's success line.
 
-Example: stop `om apply` when your config has uncommitted changes.
+Example: stop `om flake apply` when your config has uncommitted changes.
 
 ```sh
 #!/usr/bin/env sh
 # ~/.config/om/hooks/pre-apply
-if git -C ~/nixos-config status --porcelain | grep -q .; then
+if git -C /etc/nixos status --porcelain | grep -q .; then
     echo "uncommitted changes - commit before applying"
     exit 1
 fi
@@ -158,23 +225,16 @@ ssh_key = ~/.ssh/id_ed25519
 ```
 
 ```
-om apply --on azula
+om flake apply --on azula
 om service logs ollama -f --on azula
-om status --all
-```
-
-```
-:: status
-
-   kyoshi   gen 348   3m ago    42 GB
-   azula    gen 192   14m ago   18 GB
+om check status --all
 ```
 
 ---
 
 ## search that stays at the prompt
 
-`om search` opens an inline widget — no fullscreen takeover. Browse results, see versions and licenses, then press enter to install the highlighted package (choosing profile, system, or try afterward).
+`om pkg search` opens an inline widget — no fullscreen takeover. Browse results, see versions and licenses, then press enter to install the highlighted package (choosing profile, system, or try afterward).
 
 ```
 :: search nixpkgs  ripgrep                          12 results
@@ -189,17 +249,6 @@ om status --all
 
    enter install  tab info  [up/down] nav  esc cancel
 ```
-
----
-
-## install that actually works
-
-`om install` uses `nix search nixpkgs` directly — no external API, no network dependency after your first channel update, no silent failures. Works offline.
-
-Two install paths, your choice:
-
-- **profile** — instant. package available immediately. no rebuild.
-- **system** — opens your editor at the right line in `configuration.nix`, then offers to apply.
 
 ---
 
@@ -237,7 +286,7 @@ default = true
 
 ```
 :: error: 'firefocks' not found in nixpkgs
-   -> try: om search firefox
+   -> try: om pkg search firefox
 ```
 
 Pink `::` marks om's voice. Green for success. Red for errors. Yellow for warnings. Color auto-disables when stdout is not a TTY. Respects `NO_COLOR`.
