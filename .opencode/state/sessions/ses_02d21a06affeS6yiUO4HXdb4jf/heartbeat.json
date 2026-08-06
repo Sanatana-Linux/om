@@ -1,0 +1,35 @@
+{
+  "lastToolCall": "2026-08-05T17:35:18.354Z",
+  "lastToolName": "bash",
+  "lastOutputTruncated": "54:    tests.root_module.link_libc = true; ",
+  "toolCount": 11,
+  "recentTools": [
+    {
+      "name": "bash",
+      "time": "2026-08-05T17:35:18.354Z"
+    },
+    {
+      "name": "bash",
+      "time": "2026-08-05T17:33:58.895Z"
+    },
+    {
+      "name": "bash",
+      "time": "2026-08-05T17:29:49.392Z"
+    },
+    {
+      "name": "bash",
+      "time": "2026-08-05T17:28:42.346Z"
+    },
+    {
+      "name": "bash",
+      "time": "2026-08-05T17:26:15.406Z"
+    }
+  ],
+  "todoProgress": {
+    "lastChange": "",
+    "completed": 0,
+    "remaining": 0,
+    "pending": 0,
+    "inProgress": 0
+  }
+}

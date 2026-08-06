@@ -1,0 +1,17 @@
+version "1.1.0"
+inputs {
+  nina {
+    archive {
+      url "https://kepr.uk/nina/archive/{{fresh_value}}.tar.gz"
+    }
+    hash algorithm=SHA-256
+    // Query kepr saves.json to get the latest nina save ID dynamically.
+    // nixtamal KDL requires combined flags (e.g. -d: not -d ":"), no integer args.
+    fresh-cmd {
+      $ curl -fsS "https://kepr.uk/nina/saves.json"
+      | cut -d: -f2
+      | cut -d, -f1
+      | tr -d "\""
+    }
+  }
+}

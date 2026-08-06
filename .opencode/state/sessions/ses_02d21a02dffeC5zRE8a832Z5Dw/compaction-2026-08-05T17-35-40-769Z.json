@@ -1,0 +1,41 @@
+{
+  "sessionId": "ses_02d21a02dffeC5zRE8a832Z5Dw",
+  "compactedAt": "2026-08-05T17:35:40.769Z",
+  "toolCalls": 11,
+  "durationSeconds": 2103,
+  "subagentInvocations": 0,
+  "modeState": {
+    "ralph": null,
+    "ultrawork": null
+  },
+  "todoProgress": {
+    "lastChange": "",
+    "completed": 0,
+    "remaining": 0,
+    "pending": 0,
+    "inProgress": 0
+  },
+  "recentTools": [
+    {
+      "name": "edit",
+      "time": "2026-08-05T17:31:23.284Z"
+    },
+    {
+      "name": "read",
+      "time": "2026-08-05T17:30:55.236Z"
+    },
+    {
+      "name": "bash",
+      "time": "2026-08-05T17:30:30.032Z"
+    },
+    {
+      "name": "bash",
+      "time": "2026-08-05T17:27:45.209Z"
+    },
+    {
+      "name": "grep",
+      "time": "2026-08-05T17:27:08.506Z"
+    }
+  ],
+  "preservedContext": []
+}

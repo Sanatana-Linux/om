@@ -1,0 +1,35 @@
+{
+  "lastToolCall": "2026-08-05T17:47:43.000Z",
+  "lastToolName": "bash",
+  "lastOutputTruncated": "PID: 228357 ",
+  "toolCount": 19,
+  "recentTools": [
+    {
+      "name": "bash",
+      "time": "2026-08-05T17:47:43.000Z"
+    },
+    {
+      "name": "read",
+      "time": "2026-08-05T17:47:12.176Z"
+    },
+    {
+      "name": "bash",
+      "time": "2026-08-05T17:43:48.214Z"
+    },
+    {
+      "name": "bash",
+      "time": "2026-08-05T17:41:31.546Z"
+    },
+    {
+      "name": "read",
+      "time": "2026-08-05T17:41:04.450Z"
+    }
+  ],
+  "todoProgress": {
+    "lastChange": "",
+    "completed": 0,
+    "remaining": 0,
+    "pending": 0,
+    "inProgress": 0
+  }
+}
