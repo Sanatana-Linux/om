@@ -1397,6 +1397,13 @@ pub fn pinningRegistry() void {
     flush();
 }
 
+// Printed once when the package index is first built (cache miss). Subsequent
+// searches are served from the on-disk index and are instant.
+pub fn searchIndexBuilding() void {
+    p("{s}building package index (first search can take a moment)...\n", .{hdr()});
+    flush();
+}
+
 // --- Plain (non-tty) search rendering ---
 // Color-gated equivalents of the raw-ANSI TUI widget, for piped/scripted search.
 // Using the gated header + c() keeps ANSI out of non-tty output (NO_COLOR / pipes).

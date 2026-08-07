@@ -5,6 +5,240 @@ const types = @import("types.zig");
 const errors = @import("errors.zig");
 const output = @import("output.zig");
 
+// ─── Persistent package index ──────────────────────────────────────────────
+//
+// `nix search nixpkgs <query>` re-evaluates the entire nixpkgs attrset on every
+// invocation — several seconds of work per keystroke. To make search feel
+// instant, we build the FULL package index once (`nix search nixpkgs --json`
+// with no query), cache it to disk keyed by the nixpkgs revision, and serve all
+// searches by substring-matching against the in-memory index. Subsequent runs
+// load the cached index from disk instead of re-evaluating nixpkgs.
+//
+// Cache layout: ~/.cache/om/packages-<rev>.json
+// The <rev> is the nixpkgs flake revision, so the cache auto-invalidates when
+// nixpkgs updates.
+
+// The in-memory index, once loaded. The index and ALL its strings are allocated
+// with std.heap.page_allocator and owned for the process lifetime (a one-shot CLI,
+// so never freed). This is essential: the caller's arena resets on every keystroke,
+// so the strings must NOT borrow from it.
+var index_cache: ?[]types.NixPackage = null;
+const index_alloc = std.heap.page_allocator;
+
+// The nixpkgs revision used to key the cache. Derived from the pinned registry
+// via `nix flake metadata nixpkgs --json` so it changes only when nixpkgs
+// actually updates. Best-effort: on any failure fall back to "unknown", which
+// forces a rebuild but never breaks search.
+fn nixpkgsRev(gpa: std.mem.Allocator, io: std.Io, environ: *const std.process.Environ.Map) []const u8 {
+    _ = environ;
+    const result = std.process.run(gpa, io, .{
+        .argv = &.{ "nix", "flake", "metadata", "nixpkgs", "--json" },
+    }) catch return gpa.dupe(u8, "unknown") catch "unknown";
+    defer gpa.free(result.stderr);
+    defer gpa.free(result.stdout);
+    switch (result.term) {
+        .exited => |code| if (code != 0) return gpa.dupe(u8, "unknown") catch "unknown",
+        else => return gpa.dupe(u8, "unknown") catch "unknown",
+    }
+    // "locked": { "rev":"...", ... } — note: nix emits no space after the colon.
+    const needle = "\"rev\":\"";
+    const start = (std.mem.indexOf(u8, result.stdout, needle) orelse
+        return gpa.dupe(u8, "unknown") catch "unknown") + needle.len;
+    const end = std.mem.indexOfScalarPos(u8, result.stdout, start, '"') orelse
+        return gpa.dupe(u8, "unknown") catch "unknown";
+    const rev = result.stdout[start..end];
+    if (rev.len == 0) return gpa.dupe(u8, "unknown") catch "unknown";
+    return gpa.dupe(u8, rev) catch gpa.dupe(u8, "unknown") catch "unknown";
+}
+
+// Cache file paths for the given revision (caller frees).
+fn jsonCachePath(gpa: std.mem.Allocator, io: std.Io, environ: *const std.process.Environ.Map, rev: []const u8) []const u8 {
+    const home = environ.get("HOME") orelse return gpa.dupe(u8, "") catch "";
+    const dir = std.fmt.allocPrint(gpa, "{s}/.cache/om", .{home}) catch return gpa.dupe(u8, "") catch "";
+    _ = std.process.run(gpa, io, .{ .argv = &.{ "mkdir", "-p", dir } }) catch {};
+    defer gpa.free(dir);
+    return std.fmt.allocPrint(gpa, "{s}/packages-{s}.json", .{ dir, rev }) catch gpa.dupe(u8, "") catch "";
+}
+
+fn binCachePath(gpa: std.mem.Allocator, io: std.Io, environ: *const std.process.Environ.Map, rev: []const u8) []const u8 {
+    const home = environ.get("HOME") orelse return gpa.dupe(u8, "") catch "";
+    const dir = std.fmt.allocPrint(gpa, "{s}/.cache/om", .{home}) catch return gpa.dupe(u8, "") catch "";
+    _ = std.process.run(gpa, io, .{ .argv = &.{ "mkdir", "-p", dir } }) catch {};
+    defer gpa.free(dir);
+    return std.fmt.allocPrint(gpa, "{s}/packages-{s}.bin", .{ dir, rev }) catch gpa.dupe(u8, "") catch "";
+}
+
+// Load the full package index from cache, or build it fresh if the cache is
+// missing/stale. The returned slice (and its strings) are owned for the process
+// lifetime (page allocator); callers must not free them.
+fn loadOrBuildIndex(gpa: std.mem.Allocator, io: std.Io, environ: *const std.process.Environ.Map) ![]types.NixPackage {
+    if (index_cache) |c| return c;
+
+    const rev = nixpkgsRev(gpa, io, environ);
+    defer gpa.free(rev);
+    const bpath = binCachePath(gpa, io, environ, rev);
+    defer if (bpath.len > 0) gpa.free(bpath);
+
+    // Fast path: load the compact binary cache (milliseconds).
+    if (bpath.len > 0) {
+        if (loadBinIndex(io, bpath) catch null) |pkgs| {
+            if (pkgs.len > 0) {
+                index_cache = pkgs;
+                return pkgs;
+            }
+        }
+    }
+
+    // Fall back to the raw JSON cache (slower to parse, ~seconds).
+    const jpath = jsonCachePath(gpa, io, environ, rev);
+    defer if (jpath.len > 0) gpa.free(jpath);
+    if (jpath.len > 0) {
+        if (std.Io.Dir.readFileAlloc(.cwd(), io, jpath, gpa, .unlimited) catch null) |content| {
+            defer gpa.free(content);
+            if (parseSearchJson(index_alloc, content, false) catch null) |pkgs| {
+                index_cache = pkgs;
+                return pkgs;
+            }
+        }
+    }
+
+    // Cache miss: build the full index. ".*" matches the whole catalog.
+    output.searchIndexBuilding();
+    const result = std.process.run(gpa, io, .{
+        .argv = &.{ "nix", "search", "nixpkgs", ".*", "--json", "--no-update-lock-file" },
+    }) catch {
+        errors.error_info.setSuggestion("run nix-channel --update and try again", .{});
+        return error.SearchFailed;
+    };
+    defer gpa.free(result.stderr);
+    defer gpa.free(result.stdout);
+    switch (result.term) {
+        .exited => |code| if (code != 0) {
+            if (isSearchUnfreeError(result.stderr)) {
+                var env = try environ.clone(gpa);
+                defer env.deinit();
+                try env.put("NIXPKGS_ALLOW_UNFREE", "1");
+                const r2 = std.process.run(gpa, io, .{
+                    .argv = &.{ "nix", "search", "nixpkgs", ".*", "--json", "--no-update-lock-file", "--impure" },
+                    .environ_map = &env,
+                }) catch return error.SearchFailed;
+                defer gpa.free(r2.stderr);
+                defer gpa.free(r2.stdout);
+                switch (r2.term) {
+                    .exited => |c| if (c != 0) return error.SearchFailed,
+                    else => return error.SearchFailed,
+                }
+                const pkgs = try parseSearchJson(index_alloc, r2.stdout, true);
+                index_cache = pkgs;
+                persistIndex(io, jpath, r2.stdout);
+                saveBinIndex(io, bpath, pkgs);
+                return pkgs;
+            }
+            return error.SearchFailed;
+        },
+        else => return error.SearchFailed,
+    }
+    const pkgs = try parseSearchJson(index_alloc, result.stdout, false);
+    index_cache = pkgs;
+
+    persistIndex(io, jpath, result.stdout);
+    saveBinIndex(io, bpath, pkgs);
+    return pkgs;
+}
+
+// Write the raw nix search JSON to the cache file (best-effort).
+fn persistIndex(io: std.Io, path: []const u8, raw: []const u8) void {
+    if (path.len == 0) return;
+    const file = std.Io.Dir.createFile(.cwd(), io, path, .{}) catch return;
+    defer file.close(io);
+    file.writePositionalAll(io, raw, 0) catch {};
+}
+
+// ─── Compact text index format ─────────────────────────────────────────────
+// One package per line, fields separated by the unit separator byte (0x1f),
+// which cannot appear in nix attribute names, versions, or descriptions:
+//
+//   <attr>\x1f<pname>\x1f<version>\x1f<description>\x1f<unfree:0|1>\n
+//
+// This loads in microseconds vs re-parsing the 18MB JSON, and uses only plain
+// byte I/O (no uncertain int-serialization APIs).
+
+fn saveBinIndex(io: std.Io, path: []const u8, pkgs: []const types.NixPackage) void {
+    if (path.len == 0) return;
+    const file = std.Io.Dir.createFile(.cwd(), io, path, .{}) catch return;
+    defer file.close(io);
+    var off: u64 = 0;
+    for (pkgs) |p| {
+        var buf: [4096]u8 = undefined;
+        const line = std.fmt.bufPrint(&buf, "{s}\x1f{s}\x1f{s}\x1f{s}\x1f{d}\n", .{
+            p.attr, p.pname, p.version, p.description, @intFromBool(p.unfree),
+        }) catch continue;
+        file.writePositionalAll(io, line, off) catch return;
+        off += line.len;
+    }
+}
+
+fn loadBinIndex(io: std.Io, path: []const u8) ![]types.NixPackage {
+    const content = try std.Io.Dir.readFileAlloc(.cwd(), io, path, index_alloc, .unlimited);
+    if (content.len == 0) return error.InvalidFormat;
+    var pkgs = std.ArrayList(types.NixPackage).init(index_alloc);
+    var lines = std.mem.splitScalar(u8, content, '\n');
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        var fields = std.mem.splitScalar(u8, line, 0x1f);
+        const attr = fields.next() orelse continue;
+        const pname = fields.next() orelse continue;
+        const version = fields.next() orelse continue;
+        const description = fields.next() orelse continue;
+        const unfree_str = fields.next() orelse "0";
+        const unfree = std.mem.eql(u8, unfree_str, "1");
+        try pkgs.append(index_alloc, .{
+            .attr = attr,
+            .pname = pname,
+            .version = version,
+            .description = description,
+            .unfree = unfree,
+        });
+    }
+    return pkgs.toOwnedSlice(index_alloc);
+}
+
+// Substring-filter the in-memory index for a query. Matches attr, pname, and
+// description. Case-insensitive. The returned slice is allocated with `allocator`
+// (strings are borrowed from the long-lived index, so only the slice is freed).
+fn filterIndex(allocator: std.mem.Allocator, index: []types.NixPackage, query: []const u8) ![]types.NixPackage {
+    var out: std.ArrayList(types.NixPackage) = .empty;
+    for (index) |pkg| {
+        if (matchesQuery(pkg, query)) {
+            try out.append(allocator, pkg);
+        }
+    }
+    return out.toOwnedSlice(allocator);
+}
+
+fn matchesQuery(pkg: types.NixPackage, query: []const u8) bool {
+    return containsInsensitive(pkg.attr, query) or
+        containsInsensitive(pkg.pname, query) or
+        containsInsensitive(pkg.description, query);
+}
+
+fn containsInsensitive(haystack: []const u8, needle: []const u8) bool {
+    if (needle.len == 0) return true;
+    if (needle.len > haystack.len) return false;
+    var i: usize = 0;
+    while (i + needle.len <= haystack.len) : (i += 1) {
+        var matched = true;
+        for (needle, 0..) |ch, j| {
+            if (std.ascii.toLower(haystack[i + j]) != std.ascii.toLower(ch)) {
+                matched = false;
+                break;
+            }
+        }
+        if (matched) return true;
+    }
+    return false;
+}
+
 // Pin the nixpkgs registry once so `nix search nixpkgs` resolves locally instead
 // of refetching github on every query. Gated by a ~/.om-registry-pinned flag:
 // absent -> pin + announce + create the flag; present -> no-op, silent. Failure
@@ -37,31 +271,10 @@ pub fn ensureRegistryPinned(gpa: std.mem.Allocator, io: std.Io, environ: *const 
 }
 
 pub fn searchPackages(gpa: std.mem.Allocator, io: std.Io, environ: *const std.process.Environ.Map, query: []const u8) ![]types.NixPackage {
-    const result = std.process.run(gpa, io, .{
-        .argv = &.{ "nix", "search", "nixpkgs", query, "--json", "--no-update-lock-file" },
-    }) catch {
-        errors.error_info.setSuggestion("run nix-channel --update and try again", .{});
-        return error.SearchFailed;
-    };
-    defer gpa.free(result.stderr);
-    defer gpa.free(result.stdout);
-
-    switch (result.term) {
-        .exited => |code| if (code != 0) {
-            // nix evaluates nixpkgs.legacyPackages during search and rejects unfree
-            // packages even when the user has allowUnfree set system-wide. Retry
-            // with NIXPKGS_ALLOW_UNFREE=1 so the package appears in results, and
-            // tag it so the install step can pass the same override.
-            if (isSearchUnfreeError(result.stderr)) {
-                return searchPackagesUnfree(gpa, io, environ, query);
-            }
-            errors.error_info.setSuggestion("run nix-channel --update and try again", .{});
-            return error.SearchFailed;
-        },
-        else => return error.SearchFailed,
-    }
-
-    return parseSearchJson(gpa, result.stdout, false);
+    // Serve from the persistent in-memory/on-disk index — instant per-keystroke,
+    // no re-evaluation of nixpkgs. The index is keyed by nixpkgs revision.
+    const index = loadOrBuildIndex(gpa, io, environ) catch return error.SearchFailed;
+    return filterIndex(gpa, index, query);
 }
 
 fn isSearchUnfreeError(stderr: []const u8) bool {
