@@ -181,7 +181,7 @@ fn saveBinIndex(io: std.Io, path: []const u8, pkgs: []const types.NixPackage) vo
 fn loadBinIndex(io: std.Io, path: []const u8) ![]types.NixPackage {
     const content = try std.Io.Dir.readFileAlloc(.cwd(), io, path, index_alloc, .unlimited);
     if (content.len == 0) return error.InvalidFormat;
-    var pkgs = std.ArrayList(types.NixPackage).init(index_alloc);
+    var pkgs: std.ArrayList(types.NixPackage) = .empty;
     var lines = std.mem.splitScalar(u8, content, '\n');
     while (lines.next()) |line| {
         if (line.len == 0) continue;
