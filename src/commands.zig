@@ -969,7 +969,6 @@ pub fn upgrade(ctx: Ctx) !void {
             ctx.gpa.free(warnings);
         }
         if (warnings.len > 0) output.buildWarnings(warnings);
-        output.applyFailed("");
         return error.BuildFailed;
     }
     const elapsed_ns = @max(0, start.untilNow(ctx.io, .awake).toNanoseconds());

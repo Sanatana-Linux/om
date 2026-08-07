@@ -622,12 +622,7 @@ pub fn applyDone(gen: u32, elapsed_ms: u64, after_failure: bool) void {
     } else {
         p("{s}{s}generation {s}{d}{s}\n", .{ face, hdr(), c(BOLD), gen, c(RESET) });
     }
-}
-
-pub fn applyFailed(translated: []const u8) void {
-    p("{s}build failed\n", .{if (color_enabled) ERR_C else ERR_P});
-    if (translated.len > 0) p("   {s}{s}{s}\n", .{ c(DIM), translated, c(RESET) });
-    p("   {s}-> om doctor{s}\n", .{ c(DIM), c(RESET) });
+    p("{s}{s}rebuild succeeded{s}\n", .{ hdr(), c(GREEN), c(RESET) });
 }
 
 pub fn applyDry(machine: []const u8) void {
