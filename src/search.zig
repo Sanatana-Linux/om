@@ -1,14 +1,58 @@
-// search.zig — inline 18-line TUI widget, no alternate screen
+// search.zig — inline TUI widget, no alternate screen
 // Raw terminal mode for interactive key handling (POSIX: linux + macos).
+//
+// The widget ALWAYS occupies exactly WIDGET_LINES physical rows. Every line it
+// draws is truncated to fit WIDGET_WIDTH columns so nothing ever wraps to a
+// second row — a wrapped line would break cursorUp(WIDGET_LINES), and each
+// re-render would drift the cursor further down, piling up garbage. All the
+// text is clamped here, never downstream.
+//
+// Both dimensions are read from the terminal at startup (TIOCGWINSZ) so the
+// widget fills the screen: more result rows on a tall terminal, wider columns
+// on a wide one. Falls back to sensible defaults when the size can't be read.
 const std = @import("std");
 const types = @import("types.zig");
 const output = @import("output.zig");
 const api = @import("api.zig");
 const rawterm = @import("rawterm.zig");
 
-const WIDGET_LINES: usize = 18;
-const RESULT_ROWS: usize = 5;
+const DEFAULT_LINES: usize = 18;
+const DEFAULT_WIDTH: usize = 80;
+const MIN_LINES: usize = 10;
+const MIN_WIDTH: usize = 40;
 const STDIN_FD = rawterm.STDIN_FD;
+
+// Set from the terminal size at startup (see detectSize). Mutable globals so
+// the render loop and cursor arithmetic all agree on one value.
+var WIDGET_LINES: usize = DEFAULT_LINES;
+var WIDGET_WIDTH: usize = DEFAULT_WIDTH;
+var RESULT_ROWS: usize = 5;
+
+// Read the terminal's row/column count via TIOCGWINSZ. On any failure (not a
+// tty, ioctl error, absurdly small window) fall back to the defaults.
+fn detectSize(io: std.Io) void {
+    var ws: std.posix.winsize = .{ .row = 0, .col = 0, .xpixel = 0, .ypixel = 0 };
+    const result = io.operate(.{ .device_io_control = .{
+        .file = std.Io.File.stdout(),
+        .code = std.posix.T.IOCGWINSZ,
+        .arg = &ws,
+    } }) catch return;
+    if (result.device_io_control < 0) return;
+    if (ws.row > 0 and ws.row >= MIN_LINES) WIDGET_LINES = ws.row;
+    if (ws.col > 0 and ws.col >= MIN_WIDTH) WIDGET_WIDTH = ws.col;
+    // Result rows = total lines minus header(2) + rule(1) + detail(4) + blank(1)
+    // + controls(1) + a little breathing room. Never below 3.
+    const avail = WIDGET_LINES -| 9;
+    RESULT_ROWS = if (avail >= 3) @min(avail, 12) else 3;
+}
+
+// Truncate `s` to fit `width` columns (best-effort UTF-8-safe cut at a safe
+// boundary — nix metadata is ASCII in practice, so a byte cut is fine).
+fn clamp(s: []const u8, width: usize) []const u8 {
+    if (s.len <= width) return s;
+    if (width == 0) return "";
+    return s[0..width];
+}
 
 // Debounce window: a keystroke defers the nix search until typing pauses this
 // long. nix search is synchronous and blocks the widget for ~1s, so the window
@@ -48,6 +92,9 @@ pub fn run(
     var saved: std.posix.termios = undefined;
     try rawterm.rawModeEnable(STDIN_FD, &saved);
     defer rawterm.rawModeDisable(STDIN_FD, saved);
+
+    // Size the widget to the terminal before the first render.
+    detectSize(io);
 
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
@@ -319,11 +366,11 @@ fn renderWidget(query: []const u8, packages: []types.NixPackage, opts: []api.Nix
     const mode_str = if (mode == .packages) "nixpkgs" else "options";
     if (searching) {
         output.p("{s}:: {s}search {s} {s}  {s}searching...{s}\n", .{
-            PKN, RST, mode_str, query, DIM, RST,
+            PKN, RST, mode_str, clamp(query, WIDGET_WIDTH - 24), DIM, RST,
         });
     } else {
         output.p("{s}:: {s}search {s} {s}  {s}{d} results{s}\n", .{
-            PKN, RST, mode_str, query, DIM, count, RST,
+            PKN, RST, mode_str, clamp(query, WIDGET_WIDTH - 24), DIM, count, RST,
         });
     }
 
@@ -344,12 +391,18 @@ fn renderWidget(query: []const u8, packages: []types.NixPackage, opts: []api.Nix
                     const marker = if (selected) PKN ++ "> " ++ RST else "  ";
                     const name_pre = if (selected) PKN ++ BLD else "";
                     const name_suf = if (selected) RST else "";
-                    output.p("   {s}{s}{s}{s}   {s}{s}{s}   {s}\n", .{ marker, name_pre, pkg.pname, name_suf, CYN, pkg.version, RST, pkg.description });
+                    // Every field is clamped so the row never wraps.
+                    const name = clamp(pkg.pname, 22);
+                    const ver = clamp(pkg.version, 12);
+                    const desc = clamp(pkg.description, WIDGET_WIDTH - 46);
+                    output.p("   {s}{s}{s}{s}   {s}{s}{s}   {s}\n", .{ marker, name_pre, name, name_suf, CYN, ver, RST, desc });
                 },
                 .options => {
                     const opt = opts[idx];
                     const marker = if (selected) PKN ++ "> " ++ RST else "  ";
-                    output.p("   {s}{s}   {s}{s}{s}\n", .{ marker, opt.name, DIM, opt.type_str, RST });
+                    const name = clamp(opt.name, WIDGET_WIDTH - 20);
+                    const typ = clamp(opt.type_str, 24);
+                    output.p("   {s}{s}   {s}{s}{s}\n", .{ marker, name, DIM, typ, RST });
                 },
             }
         } else {
@@ -357,8 +410,9 @@ fn renderWidget(query: []const u8, packages: []types.NixPackage, opts: []api.Nix
         }
     }
 
-    // Line 8: blank
-    output.raw(CLR ++ "\n");
+    // Line 8: horizontal rule separating the result list from the detail pane.
+    output.raw(CLR);
+    output.p("   {s}{s}{s}\n", .{ DIM, "─" ** (WIDGET_WIDTH - 4), RST });
 
     // Lines 9-12: selected package detail. Line 9 (name+version) is shared; the
     // next three lines depend on `detail`. Every arm emits exactly 3 lines so the
@@ -366,46 +420,46 @@ fn renderWidget(query: []const u8, packages: []types.NixPackage, opts: []api.Nix
     if (count > 0 and mode == .packages) {
         const pkg = packages[sel];
         output.raw(CLR);
-        output.p("   {s}{s}{s}{s}  {s}{s}{s}\n", .{ PKN, BLD, pkg.pname, RST, CYN, pkg.version, RST });
+        output.p("   {s}{s}{s}{s}  {s}{s}{s}\n", .{ PKN, BLD, clamp(pkg.pname, 22), RST, CYN, clamp(pkg.version, 12), RST });
         switch (detail) {
             .collapsed => {
                 output.raw(CLR);
-                output.p("   {s}\n", .{pkg.description});
+                output.p("   {s}\n", .{clamp(pkg.description, WIDGET_WIDTH - 4)});
                 output.raw(CLR ++ "\n");
                 output.raw(CLR);
-                output.p("   {s}attr{s}  {s}{s}{s}\n", .{ DIM, RST, CYN, pkg.attr, RST });
+                output.p("   {s}attr{s}  {s}{s}{s}\n", .{ DIM, RST, CYN, clamp(pkg.attr, WIDGET_WIDTH - 12), RST });
             },
             .loading => {
                 output.raw(CLR);
                 output.p("   {s}loading details...{s}\n", .{ DIM, RST });
                 output.raw(CLR ++ "\n");
                 output.raw(CLR);
-                output.p("   {s}attr{s}  {s}{s}{s}\n", .{ DIM, RST, CYN, pkg.attr, RST });
+                output.p("   {s}attr{s}  {s}{s}{s}\n", .{ DIM, RST, CYN, clamp(pkg.attr, WIDGET_WIDTH - 12), RST });
             },
             .unavailable => {
                 output.raw(CLR);
                 output.p("   {s}details unavailable{s}\n", .{ DIM, RST });
                 output.raw(CLR ++ "\n");
                 output.raw(CLR);
-                output.p("   {s}attr{s}  {s}{s}{s}\n", .{ DIM, RST, CYN, pkg.attr, RST });
+                output.p("   {s}attr{s}  {s}{s}{s}\n", .{ DIM, RST, CYN, clamp(pkg.attr, WIDGET_WIDTH - 12), RST });
             },
             .meta => |m| {
-                const home = if (m.homepage.len > 0) m.homepage else "—";
-                const lic = if (m.license.len > 0) m.license else "—";
+                const home = clamp(if (m.homepage.len > 0) m.homepage else "—", WIDGET_WIDTH - 16);
+                const lic = clamp(if (m.license.len > 0) m.license else "—", WIDGET_WIDTH - 16);
                 output.raw(CLR);
                 output.p("   {s}{s:<8}{s}{s}{s}{s}\n", .{ DIM, "home", RST, CYN, home, RST });
                 output.raw(CLR);
                 output.p("   {s}{s:<8}{s}{s}\n", .{ DIM, "license", RST, lic });
                 output.raw(CLR);
-                output.p("   {s}{s:<8}{s}{s}{s}{s}\n", .{ DIM, "attr", RST, CYN, pkg.attr, RST });
+                output.p("   {s}{s:<8}{s}{s}{s}{s}\n", .{ DIM, "attr", RST, CYN, clamp(pkg.attr, WIDGET_WIDTH - 16), RST });
             },
         }
     } else if (count > 0 and mode == .options) {
         const opt = opts[sel];
         output.raw(CLR);
-        output.p("   {s}  {s}{s}{s}\n", .{ opt.name, DIM, opt.type_str, RST });
+        output.p("   {s}  {s}{s}{s}\n", .{ clamp(opt.name, WIDGET_WIDTH - 6), DIM, clamp(opt.type_str, 24), RST });
         output.raw(CLR);
-        output.p("   {s}\n", .{opt.description});
+        output.p("   {s}\n", .{clamp(opt.description, WIDGET_WIDTH - 4)});
         output.raw(CLR ++ "\n");
         output.raw(CLR ++ "\n");
     } else {
