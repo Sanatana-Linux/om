@@ -599,12 +599,40 @@ fn cleanExtractedBody(allocator: std.mem.Allocator, raw: []const u8) []const u8 
 pub fn fallback(allocator: std.mem.Allocator, stderr: []const u8) TranslatedError {
     const drv = extractDrvPath(stderr);
     const suggestion = if (drv) |path|
-        std.fmt.allocPrint(allocator, "om doctor  for diagnostics\nnix log {s}", .{path}) catch "om doctor  for diagnostics"
+        std.fmt.allocPrint(allocator, "om check doctor  for diagnostics\nnix log {s}", .{path}) catch "om check doctor  for diagnostics"
     else
-        "om doctor  for diagnostics";
+        "om check doctor  for diagnostics";
+
+    // Even when the translation pipeline can't classify the error, surface the
+    // first few meaningful lines of the raw nix output so the user isn't left
+    // guessing — a generic "something went wrong" is never informative.
+    var body_lines: [6][]const u8 = undefined;
+    var count: usize = 0;
+    var it = std.mem.splitScalar(u8, stderr, '\n');
+    while (it.next()) |raw_line| {
+        if (count >= body_lines.len) break;
+        const line = std.mem.trim(u8, raw_line, " \t\r");
+        if (line.len == 0) continue;
+        // Skip pure noise: build progress, copy lines, store paths alone.
+        if (std.mem.startsWith(u8, line, "copying path '") or
+            std.mem.startsWith(u8, line, "fetching path '") or
+            std.mem.startsWith(u8, line, "building '") or
+            std.mem.startsWith(u8, line, "these ") or
+            std.mem.startsWith(u8, line, "downloading ") or
+            (std.mem.startsWith(u8, line, "/nix/store/") and std.mem.indexOf(u8, line, " ") == null))
+            continue;
+        body_lines[count] = line;
+        count += 1;
+    }
+
+    const body = if (count > 0)
+        std.mem.join(allocator, "\n", body_lines[0..count]) catch "see the raw output above for details."
+    else
+        "the build failed with no readable output. Run `om flake apply --dry` or `nix log` on the derivation for details.";
+
     return .{
         .title = "build failed",
-        .body = "something went wrong that om couldn't translate.",
+        .body = body,
         .suggestion = suggestion,
         .is_system = true,
     };
@@ -692,13 +720,17 @@ test "layer 1: service activation failure" {
 }
 
 test "layer 3: fallback always returns" {
-    const t = fallback(std.testing.allocator, "");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const t = fallback(arena.allocator(), "");
     try std.testing.expectEqualStrings("build failed", t.title);
     try std.testing.expect(t.is_system);
 }
 
 test "translateError: falls through to fallback" {
-    const t = translateError(std.testing.allocator, "unrecognized garbage stderr");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const t = translateError(arena.allocator(), "unrecognized garbage stderr");
     try std.testing.expectEqualStrings("build failed", t.title);
 }
 

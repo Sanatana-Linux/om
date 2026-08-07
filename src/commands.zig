@@ -122,6 +122,14 @@ pub fn apply(ctx: Ctx) !void {
 
     if (code != 0) {
         exec.markApplyFailed(ctx.io, ctx.environ);
+        // Surface any nix warnings before the failure line so the user sees them
+        // even on a failed build — they often point at the root cause.
+        const warnings = errors.extractWarnings(ctx.gpa, errors.getBuildStderr()) catch &.{};
+        defer {
+            for (warnings) |w| ctx.gpa.free(w);
+            ctx.gpa.free(warnings);
+        }
+        if (warnings.len > 0) output.buildWarnings(warnings);
         return error.BuildFailed;
     }
 
@@ -953,6 +961,14 @@ pub fn upgrade(ctx: Ctx) !void {
     };
     output.buildPanelClear();
     if (code != 0) {
+        // Surface any nix warnings before the failure line so the user sees them
+        // even on a failed upgrade — they often point at the root cause.
+        const warnings = errors.extractWarnings(ctx.gpa, errors.getBuildStderr()) catch &.{};
+        defer {
+            for (warnings) |w| ctx.gpa.free(w);
+            ctx.gpa.free(warnings);
+        }
+        if (warnings.len > 0) output.buildWarnings(warnings);
         output.applyFailed("");
         return error.BuildFailed;
     }

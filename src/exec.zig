@@ -480,6 +480,9 @@ fn nixosRebuildRun(io: std.Io, machine: *const types.Machine, gpa: std.mem.Alloc
         defer gpa.free(flake_ref);
         try argv.appendSlice(gpa, &.{ "--flake", flake_ref });
     }
+    // --impure by default so rebuilds can read the environment (e.g. hardware
+    // config, allowUnfree overrides) without pure-eval restrictions.
+    try argv.append(gpa, "--impure");
     try argv.appendSlice(gpa, extra_flags);
 
     output.flush();
@@ -610,6 +613,9 @@ fn nixosRebuildRunStreamed(
         defer gpa.free(ref);
         try argv_list.appendSlice(gpa, &.{ "--flake", ref });
     }
+    // --impure by default so rebuilds can read the environment without pure-eval
+    // restrictions. Mirrors nixosRebuildRun's behavior.
+    try argv_list.append(gpa, "--impure");
     try argv_list.appendSlice(gpa, extra_flags);
 
     output.flush();
