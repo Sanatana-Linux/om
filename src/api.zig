@@ -25,12 +25,26 @@ const output = @import("output.zig");
 var index_cache: ?[]types.NixPackage = null;
 const index_alloc = std.heap.page_allocator;
 
-// The nixpkgs revision used to key the cache. Derived from the pinned registry
-// via `nix flake metadata nixpkgs --json` so it changes only when nixpkgs
-// actually updates. Best-effort: on any failure fall back to "unknown", which
-// forces a rebuild but never breaks search.
+// The nixpkgs revision used to key the cache. Reads a marker file first
+// (~/.cache/om/rev) — written when the index is built — so the load path never
+// invokes nix (nix flake metadata costs ~2s per call). Only when the marker is
+// absent do we fall back to querying nix to derive the rev (e.g. first build).
 fn nixpkgsRev(gpa: std.mem.Allocator, io: std.Io, environ: *const std.process.Environ.Map) []const u8 {
-    _ = environ;
+    const home = environ.get("HOME") orelse return gpa.dupe(u8, "unknown") catch "unknown";
+    const dir = std.fmt.allocPrint(gpa, "{s}/.cache/om", .{home}) catch return gpa.dupe(u8, "unknown") catch "unknown";
+    _ = std.process.run(gpa, io, .{ .argv = &.{ "mkdir", "-p", dir } }) catch {};
+    defer gpa.free(dir);
+    const rev_path = std.fmt.allocPrint(gpa, "{s}/rev", .{dir}) catch return gpa.dupe(u8, "unknown") catch "unknown";
+    defer gpa.free(rev_path);
+
+    // Fast path: read the recorded rev marker (no nix invocation).
+    if (std.Io.Dir.readFileAlloc(.cwd(), io, rev_path, gpa, .unlimited) catch null) |content| {
+        defer gpa.free(content);
+        const rev = std.mem.trim(u8, content, " \t\r\n");
+        if (rev.len > 0) return gpa.dupe(u8, rev) catch gpa.dupe(u8, "unknown") catch "unknown";
+    }
+
+    // Slow path (first build only): derive the rev from nix.
     const result = std.process.run(gpa, io, .{
         .argv = &.{ "nix", "flake", "metadata", "nixpkgs", "--json" },
     }) catch return gpa.dupe(u8, "unknown") catch "unknown";
@@ -40,7 +54,7 @@ fn nixpkgsRev(gpa: std.mem.Allocator, io: std.Io, environ: *const std.process.En
         .exited => |code| if (code != 0) return gpa.dupe(u8, "unknown") catch "unknown",
         else => return gpa.dupe(u8, "unknown") catch "unknown",
     }
-    // "locked": { "rev":"...", ... } — note: nix emits no space after the colon.
+    // "locked": { "rev":"...", ... } — nix emits no space after the colon.
     const needle = "\"rev\":\"";
     const start = (std.mem.indexOf(u8, result.stdout, needle) orelse
         return gpa.dupe(u8, "unknown") catch "unknown") + needle.len;
@@ -48,7 +62,13 @@ fn nixpkgsRev(gpa: std.mem.Allocator, io: std.Io, environ: *const std.process.En
         return gpa.dupe(u8, "unknown") catch "unknown";
     const rev = result.stdout[start..end];
     if (rev.len == 0) return gpa.dupe(u8, "unknown") catch "unknown";
-    return gpa.dupe(u8, rev) catch gpa.dupe(u8, "unknown") catch "unknown";
+    const owned = gpa.dupe(u8, rev) catch gpa.dupe(u8, "unknown") catch "unknown";
+    // Record it for next time.
+    if (std.Io.Dir.createFile(.cwd(), io, rev_path, .{})) |f| {
+        defer f.close(io);
+        f.writePositionalAll(io, owned, 0) catch {};
+    } else |_| {}
+    return owned;
 }
 
 // Cache file paths for the given revision (caller frees).
