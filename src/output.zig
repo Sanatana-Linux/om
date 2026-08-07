@@ -70,6 +70,10 @@ pub const BuildPanel = struct {
     active_len: usize = 0,
     mode: enum { fetching, building, activating } = .fetching,
     pulse_pos: u8 = 0,
+    // Position of the bright "head" block that sweeps along the fetching bar so
+    // it visibly moves even when the completed count is unchanged (a long single
+    // download). Advances on every render.
+    head_pos: u8 = 0,
 
     const BAR_WIDTH = 28;
 
@@ -172,8 +176,25 @@ pub const BuildPanel = struct {
         }
         if (empty > 0) {
             p("{s}", .{c(DIM)});
-            for (0..empty) |_| p("░", .{});
+            for (0..empty) |i| {
+                // In fetching mode, sweep a bright "head" block along the gray
+                // remainder so the bar visibly moves even when the completed count
+                // is unchanged (a long single download). The head sits just past
+                // the filled portion and advances on every render.
+                if (self.mode == .fetching and (filled + i) == self.head_pos) {
+                    p("{s}█{s}", .{ c(blk_color), c(RESET) });
+                } else {
+                    p("░", .{});
+                }
+            }
             p("{s}", .{c(RESET)});
+        }
+        // Advance the head; wrap it back to the filled edge so it keeps sweeping.
+        if (self.mode == .fetching and empty > 0) {
+            const filled_u8: u8 = @intCast(@min(filled, 255));
+            const empty_u8: u8 = @intCast(@min(empty, 255));
+            const offset = (self.head_pos -| filled_u8 + 1) % empty_u8;
+            self.head_pos = filled_u8 + offset;
         }
         p("   {s}{d} / {d} paths{s}", .{ c(DIM), self.completed, self.total, c(RESET) });
         if (self.total_mb > 0) {

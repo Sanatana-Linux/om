@@ -123,7 +123,20 @@ pub const TranslatedError = struct {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 // Return the single-quoted content at the first occurrence in s.
+// Return the single-quoted content at the first occurrence in s. Nix quotes
+// identifiers as `` `name' `` (backtick before, apostrophe after), so prefer
+// that convention; fall back to plain '...' for other callers.
 fn extractQuoted(s: []const u8) ?[]const u8 {
+    // Backtick-quote convention: `` `foo' `` → "foo"
+    if (std.mem.indexOf(u8, s, "`")) |bt| {
+        const a = bt + 1;
+        if (a < s.len and s[a] == '\'') {
+            // `` `' `` — empty or malformed; fall through to plain-quote scan.
+        } else if (std.mem.indexOfScalarPos(u8, s, a, '\'')) |b| {
+            const v = s[a..b];
+            return if (v.len > 0) v else null;
+        }
+    }
     const a = std.mem.indexOf(u8, s, "'") orelse return null;
     const b = std.mem.indexOfPos(u8, s, a + 1, "'") orelse return null;
     const v = s[a + 1 .. b];

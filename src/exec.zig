@@ -560,7 +560,17 @@ fn runStreamedCapture(io: std.Io, gpa: std.mem.Allocator, argv: []const []const 
     if (child.stderr) |stderr_file| {
         var reader_buf: [8192]u8 = undefined;
         var fr = std.Io.File.Reader.initStreaming(stderr_file, io, &reader_buf);
+        // Poll stderr with a short timeout so the build panel keeps animating
+        // even when nix emits no new lines (e.g. a long single download). This
+        // makes it obvious the bar isn't stuck.
+        var pfd = [_]std.posix.pollfd{.{ .fd = stderr_file.handle, .events = std.posix.POLL.IN, .revents = 0 }};
         while (true) {
+            const ready = std.posix.poll(&pfd, 100) catch 0;
+            if (ready == 0) {
+                // No new stderr line — just advance the animation and keep waiting.
+                panel.render();
+                continue;
+            }
             const raw = fr.interface.takeDelimiter('\n') catch |err| switch (err) {
                 // A single line exceeded the reader's buffer — routine for nix eval
                 // traces/derivation lists. Discard the oversized remainder instead of
