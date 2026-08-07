@@ -469,11 +469,17 @@ fn useFlakeFlag(gpa: std.mem.Allocator, io: std.Io, machine: *const types.Machin
 // output is suppressed; on failure, reportError() translates stderr via
 // errors.translateError(). The substep line above the call tells the user what
 // is running; silence during the build is intentional per the error-wrapping brief.
-fn nixosRebuildRun(io: std.Io, machine: *const types.Machine, gpa: std.mem.Allocator, verb: []const u8, flake: bool, extra_flags: []const []const u8) !u8 {
+// `flake_attr` is the NixOS configuration name (e.g. "bagalamukhi") to rebuild
+// when the flake defines multiple configurations; null uses the flake default.
+fn nixosRebuildRun(io: std.Io, machine: *const types.Machine, gpa: std.mem.Allocator, verb: []const u8, flake: bool, flake_attr: ?[]const u8, extra_flags: []const []const u8) !u8 {
     var argv: std.ArrayList([]const u8) = .empty;
     defer argv.deinit(gpa);
     try argv.appendSlice(gpa, &.{ "sudo", "nixos-rebuild", verb });
-    if (flake) try argv.appendSlice(gpa, &.{ "--flake", machine.config_path });
+    if (flake) {
+        const flake_ref = try flakeRef(gpa, machine, flake_attr);
+        defer gpa.free(flake_ref);
+        try argv.appendSlice(gpa, &.{ "--flake", flake_ref });
+    }
     try argv.appendSlice(gpa, extra_flags);
 
     output.flush();
@@ -484,14 +490,26 @@ fn nixosRebuildRun(io: std.Io, machine: *const types.Machine, gpa: std.mem.Alloc
     return r.exit_code;
 }
 
-pub fn nixosRebuildSwitch(io: std.Io, machine: *const types.Machine, gpa: std.mem.Allocator, extra_flags: []const []const u8) !u8 {
+// Build the flake ref passed to nixos-rebuild --flake. When a configuration
+// name is given, it becomes "<config_path>#<attr>"; otherwise just the path
+// (nixos-rebuild uses the flake's default configuration).
+fn flakeRef(gpa: std.mem.Allocator, machine: *const types.Machine, flake_attr: ?[]const u8) ![]u8 {
+    if (flake_attr) |attr| {
+        return std.fmt.allocPrint(gpa, "{s}#{s}", .{ machine.config_path, attr });
+    }
+    return gpa.dupe(u8, machine.config_path);
+}
+
+pub fn nixosRebuildSwitch(io: std.Io, machine: *const types.Machine, gpa: std.mem.Allocator, flake_attr: ?[]const u8, extra_flags: []const []const u8) !u8 {
     const flake = useFlakeFlag(gpa, io, machine);
     if (flake) {
-        output.printSubstep("nixos-rebuild switch --flake {s}", .{machine.config_path});
+        const ref = try flakeRef(gpa, machine, flake_attr);
+        defer gpa.free(ref);
+        output.printSubstep("nixos-rebuild switch --flake {s}", .{ref});
     } else {
         output.printSubstep("nixos-rebuild switch", .{});
     }
-    return nixosRebuildRun(io, machine, gpa, "switch", flake, extra_flags);
+    return nixosRebuildRun(io, machine, gpa, "switch", flake, flake_attr, extra_flags);
 }
 
 // Live-streaming variant used by `apply` when stdout is a TTY. Each stderr line
@@ -503,16 +521,19 @@ pub fn nixosRebuildSwitchWithPanel(
     machine: *const types.Machine,
     gpa: std.mem.Allocator,
     panel: *output.BuildPanel,
+    flake_attr: ?[]const u8,
     extra_flags: []const []const u8,
 ) !u8 {
     const flake = useFlakeFlag(gpa, io, machine);
     if (flake) {
-        output.printSubstep("nixos-rebuild switch --flake {s}", .{machine.config_path});
+        const ref = try flakeRef(gpa, machine, flake_attr);
+        defer gpa.free(ref);
+        output.printSubstep("nixos-rebuild switch --flake {s}", .{ref});
     } else {
         output.printSubstep("nixos-rebuild switch", .{});
     }
-    if (!output.colorEnabled()) return nixosRebuildRun(io, machine, gpa, "switch", flake, extra_flags);
-    return nixosRebuildRunStreamed(io, machine, gpa, "switch", flake, panel, extra_flags);
+    if (!output.colorEnabled()) return nixosRebuildRun(io, machine, gpa, "switch", flake, flake_attr, extra_flags);
+    return nixosRebuildRunStreamed(io, machine, gpa, "switch", flake, flake_attr, panel, extra_flags);
 }
 
 // Spawn argv with stderr piped, feed each line to the build panel for live progress,
@@ -577,13 +598,18 @@ fn nixosRebuildRunStreamed(
     gpa: std.mem.Allocator,
     verb: []const u8,
     flake: bool,
+    flake_attr: ?[]const u8,
     panel: *output.BuildPanel,
     extra_flags: []const []const u8,
 ) !u8 {
     var argv_list: std.ArrayList([]const u8) = .empty;
     defer argv_list.deinit(gpa);
     try argv_list.appendSlice(gpa, &.{ "sudo", "nixos-rebuild", verb });
-    if (flake) try argv_list.appendSlice(gpa, &.{ "--flake", machine.config_path });
+    if (flake) {
+        const ref = try flakeRef(gpa, machine, flake_attr);
+        defer gpa.free(ref);
+        try argv_list.appendSlice(gpa, &.{ "--flake", ref });
+    }
     try argv_list.appendSlice(gpa, extra_flags);
 
     output.flush();
@@ -644,12 +670,12 @@ test "runStreamedCapture preserves newlines and survives an oversized stderr lin
     try std.testing.expect(!std.mem.eql(u8, translated.body, "something went wrong that om couldn't translate."));
 }
 
-pub fn nixosRebuildDryActivate(io: std.Io, machine: *const types.Machine, gpa: std.mem.Allocator, extra_flags: []const []const u8) !u8 {
-    return nixosRebuildRun(io, machine, gpa, "dry-activate", useFlakeFlag(gpa, io, machine), extra_flags);
+pub fn nixosRebuildDryActivate(io: std.Io, machine: *const types.Machine, gpa: std.mem.Allocator, flake_attr: ?[]const u8, extra_flags: []const []const u8) !u8 {
+    return nixosRebuildRun(io, machine, gpa, "dry-activate", useFlakeFlag(gpa, io, machine), flake_attr, extra_flags);
 }
 
-pub fn nixosRebuildBuild(io: std.Io, machine: *const types.Machine, gpa: std.mem.Allocator, extra_flags: []const []const u8) !u8 {
-    return nixosRebuildRun(io, machine, gpa, "build", useFlakeFlag(gpa, io, machine), extra_flags);
+pub fn nixosRebuildBuild(io: std.Io, machine: *const types.Machine, gpa: std.mem.Allocator, flake_attr: ?[]const u8, extra_flags: []const []const u8) !u8 {
+    return nixosRebuildRun(io, machine, gpa, "build", useFlakeFlag(gpa, io, machine), flake_attr, extra_flags);
 }
 
 // --- Generations ---

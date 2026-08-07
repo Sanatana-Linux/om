@@ -88,9 +88,13 @@ pub fn checkCmd(ctx: Ctx) !void {
 }
 
 pub fn apply(ctx: Ctx) !void {
+    // Optional first positional arg is the NixOS configuration name to rebuild
+    // (e.g. `om flake apply bagalamukhi`). Defaults to the machine name, so
+    // `om flake apply` on host "bagalamukhi" rebuilds /etc/nixos#bagalamukhi.
+    const flake_attr: ?[]const u8 = if (ctx.args.len > 0) ctx.args[0] else ctx.machine.name;
     if (ctx.dry) {
         output.applyDry(ctx.machine.name);
-        const code = try exec.nixosRebuildDryActivate(ctx.io, &ctx.machine, ctx.gpa, ctx.passthrough);
+        const code = try exec.nixosRebuildDryActivate(ctx.io, &ctx.machine, ctx.gpa, flake_attr, ctx.passthrough);
         if (code != 0) return error.BuildFailed;
         output.applyDryDone();
         return;
@@ -109,7 +113,7 @@ pub fn apply(ctx: Ctx) !void {
     const start = std.Io.Clock.awake.now(ctx.io);
 
     var panel = output.BuildPanel{};
-    const code = exec.nixosRebuildSwitchWithPanel(ctx.io, &ctx.machine, ctx.gpa, &panel, ctx.passthrough) catch |e| {
+    const code = exec.nixosRebuildSwitchWithPanel(ctx.io, &ctx.machine, ctx.gpa, &panel, flake_attr, ctx.passthrough) catch |e| {
         output.buildPanelClear();
         exec.markApplyFailed(ctx.io, ctx.environ);
         return e;
@@ -139,7 +143,8 @@ pub fn apply(ctx: Ctx) !void {
 
 pub fn checkLocal(ctx: Ctx) !void {
     output.checkStart(ctx.machine.name);
-    const code = try exec.nixosRebuildBuild(ctx.io, &ctx.machine, ctx.gpa, ctx.passthrough);
+    const flake_attr: ?[]const u8 = if (ctx.args.len > 0) ctx.args[0] else ctx.machine.name;
+    const code = try exec.nixosRebuildBuild(ctx.io, &ctx.machine, ctx.gpa, flake_attr, ctx.passthrough);
     if (code != 0) return error.BuildFailed;
     output.checkOk();
 }
@@ -922,6 +927,11 @@ pub fn upgrade(ctx: Ctx) !void {
         return error.HookAborted;
     }
 
+    // Optional first positional arg is the NixOS configuration name to rebuild
+    // (e.g. `om flake upgrade bagalamukhi`). Defaults to the machine name, so
+    // `om flake upgrade` on host "bagalamukhi" rebuilds /etc/nixos#bagalamukhi.
+    const flake_attr: ?[]const u8 = if (ctx.args.len > 0) ctx.args[0] else ctx.machine.name;
+
     output.upgradeStart(ctx.machine.name);
     // Flake systems update inputs (flake.lock); channel systems update channels.
     // Running nix-channel --update on a flake system is a no-op at best. The
@@ -937,7 +947,7 @@ pub fn upgrade(ctx: Ctx) !void {
     output.buildPanelInit();
     const start = std.Io.Clock.awake.now(ctx.io);
     var panel = output.BuildPanel{};
-    const code = exec.nixosRebuildSwitchWithPanel(ctx.io, &ctx.machine, ctx.gpa, &panel, ctx.passthrough) catch |e| {
+    const code = exec.nixosRebuildSwitchWithPanel(ctx.io, &ctx.machine, ctx.gpa, &panel, flake_attr, ctx.passthrough) catch |e| {
         output.buildPanelClear();
         return e;
     };
