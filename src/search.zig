@@ -412,7 +412,16 @@ fn renderWidget(query: []const u8, packages: []types.NixPackage, opts: []api.Nix
 
     // Line 8: horizontal rule separating the result list from the detail pane.
     output.raw(CLR);
-    output.p("   {s}{s}{s}\n", .{ DIM, "─" ** (WIDGET_WIDTH - 4), RST });
+    var rule_buf: [256]u8 = undefined;
+    const rule_len = @min(WIDGET_WIDTH -| 4, rule_buf.len);
+    // "─" is U+2500, encoded as the 3-byte UTF-8 sequence E2 94 80.
+    var ri: usize = 0;
+    while (ri + 3 <= rule_len) : (ri += 3) {
+        rule_buf[ri] = 0xE2;
+        rule_buf[ri + 1] = 0x94;
+        rule_buf[ri + 2] = 0x80;
+    }
+    output.p("   {s}{s}{s}\n", .{ DIM, rule_buf[0..ri], RST });
 
     // Lines 9-12: selected package detail. Line 9 (name+version) is shared; the
     // next three lines depend on `detail`. Every arm emits exactly 3 lines so the
