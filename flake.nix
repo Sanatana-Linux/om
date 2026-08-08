@@ -44,8 +44,8 @@
             enable = lib.mkEnableOption "om, the NixOS helper (fork of nina)";
             package = lib.mkOption {
               type = lib.types.package;
-              default = self.packages.${pkgs.system}.default;
-              defaultText = lib.literalExpression "om.packages.\${pkgs.system}.default";
+              default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+              defaultText = lib.literalExpression "om.packages.\${pkgs.stdenv.hostPlatform.system}.default";
               description = "The om package to install.";
             };
           };
