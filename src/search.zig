@@ -22,11 +22,20 @@ const MIN_LINES: usize = 10;
 const MIN_WIDTH: usize = 40;
 const STDIN_FD = rawterm.STDIN_FD;
 
+// Widget layout budget, in rows, excluding the result list and detail pane:
+// header(1) + blank(1) + rule(1) + blank(1) + controls(1). Everything else is
+// split between the result rows and the detail pane so the widget always sums
+// to exactly WIDGET_LINES.
+const FIXED_LINES: usize = 5;
+const MIN_RESULT_ROWS: usize = 3;
+const MIN_DETAIL_LINES: usize = 4;
+
 // Set from the terminal size at startup (see detectSize). Mutable globals so
 // the render loop and cursor arithmetic all agree on one value.
 var WIDGET_LINES: usize = DEFAULT_LINES;
 var WIDGET_WIDTH: usize = DEFAULT_WIDTH;
 var RESULT_ROWS: usize = 5;
+var DETAIL_LINES: usize = MIN_DETAIL_LINES;
 
 // Read the terminal's row/column count via TIOCGWINSZ. On any failure (not a
 // tty, ioctl error, absurdly small window) fall back to the defaults.
@@ -40,10 +49,17 @@ fn detectSize(io: std.Io) void {
     if (result.device_io_control < 0) return;
     if (ws.row > 0 and ws.row >= MIN_LINES) WIDGET_LINES = ws.row;
     if (ws.col > 0 and ws.col >= MIN_WIDTH) WIDGET_WIDTH = ws.col;
-    // Result rows = total lines minus header(2) + rule(1) + detail(4) + blank(1)
-    // + controls(1) + a little breathing room. Never below 3.
-    const avail = WIDGET_LINES -| 9;
-    RESULT_ROWS = if (avail >= 3) @min(avail, 12) else 3;
+    // The result list occupies 3/4 of the widget height; the detail pane gets
+    // the remaining rows. RESULT_ROWS is capped so the detail pane keeps at
+    // least MIN_DETAIL_LINES (room for the wrapped description + attr row) when
+    // the terminal is tall enough to fit it, and floored at MIN_RESULT_ROWS on
+    // very short terminals. On a terminal too short to hold both minimums the
+    // pane simply shrinks below its minimum — nothing underflows because
+    // WIDGET_LINES is always >= MIN_LINES.
+    const desired: usize = (WIDGET_LINES * 3) / 4;
+    const max_for_detail: usize = WIDGET_LINES -| (FIXED_LINES + MIN_DETAIL_LINES);
+    RESULT_ROWS = @max(MIN_RESULT_ROWS, @min(desired, max_for_detail));
+    DETAIL_LINES = WIDGET_LINES - (FIXED_LINES + RESULT_ROWS);
 }
 
 // Truncate `s` to fit `width` columns (best-effort UTF-8-safe cut at a safe
@@ -52,6 +68,61 @@ fn clamp(s: []const u8, width: usize) []const u8 {
     if (s.len <= width) return s;
     if (width == 0) return "";
     return s[0..width];
+}
+
+// Wrap `s` to `width` columns on word boundaries, writing each line through
+// `output.p`. A word wider than `width` is hard-broken so the row still fits and
+// never spills onto a second physical row. `indent` is a literal prefix printed
+// before every line (the 3-space list/detail gutter). At most `max_lines` lines
+// are emitted — extra content is dropped and the caller pads with blanks — and
+// the number of lines actually emitted is returned.
+fn printWrapped(indent: []const u8, s: []const u8, width: usize, max_lines: usize) usize {
+    var line_start: usize = 0; // byte index of the current line's first char
+    var last_space: ?usize = null; // index of the most recent wrap-capable space
+    var col: usize = 0; // columns consumed on the current line
+    var lines_out: usize = 0;
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (c == '\n') {
+            lines_out += 1;
+            if (lines_out >= max_lines) return lines_out;
+            output.p("{s}{s}{s}\n", .{ indent, clamp(s[line_start..i], width), output.C_RESET });
+            i += 1;
+            line_start = i;
+            last_space = null;
+            col = 0;
+            continue;
+        }
+        if (c == ' ') last_space = i;
+        col += 1;
+        if (col > width) {
+            const wrap_at = if (last_space) |ls| (if (ls < i) ls else null) else null;
+            const end = wrap_at orelse line_start + width;
+            lines_out += 1;
+            if (lines_out >= max_lines) return lines_out;
+            output.p("{s}{s}{s}\n", .{ indent, clamp(s[line_start..end], width), output.C_RESET });
+            line_start = if (wrap_at) |ls| ls + 1 else end;
+            last_space = null;
+            col = i + 1 - line_start;
+        }
+    }
+    // Trailing partial line (no newline at the end).
+    if (line_start < s.len) {
+        lines_out += 1;
+        if (lines_out > max_lines) return max_lines;
+        output.p("{s}{s}{s}\n", .{ indent, clamp(s[line_start..s.len], width), output.C_RESET });
+    }
+    return lines_out;
+}
+
+// Emit `n` blank, cleared rows. Used to pad the widget to exactly WIDGET_LINES
+// so the cursor-up count in the key loop always lines up with what was drawn.
+fn emitBlanks(n: usize) void {
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        output.raw(output.C_CLEAR_EOL ++ "\n");
+    }
 }
 
 // Debounce window: a keystroke defers the nix search until typing pauses this
@@ -423,78 +494,80 @@ fn renderWidget(query: []const u8, packages: []types.NixPackage, opts: []api.Nix
     }
     output.p("   {s}{s}{s}\n", .{ DIM, rule_buf[0..ri], RST });
 
-    // Lines 9-12: selected package detail. Line 9 (name+version) is shared; the
-    // next three lines depend on `detail`. Every arm emits exactly 3 lines so the
-    // widget stays WIDGET_LINES tall.
+    // Detail pane: selected package/option. Every arm emits exactly
+    // DETAIL_LINES rows (wrapped content + blanks) so the widget stays
+    // WIDGET_LINES tall and the cursor-up count in the key loop stays correct.
+    const GUTTER = "   ";
     if (count > 0 and mode == .packages) {
         const pkg = packages[sel];
+        // Row 0: name + version.
         output.raw(CLR);
-        output.p("   {s}{s}{s}{s}  {s}{s}{s}\n", .{ PKN, BLD, clamp(pkg.pname, 22), RST, CYN, clamp(pkg.version, 12), RST });
+        output.p("{s}{s}{s}{s}{s}  {s}{s}{s}\n", .{ GUTTER, PKN, BLD, clamp(pkg.pname, 22), RST, CYN, clamp(pkg.version, 12), RST });
+        var used: usize = 1;
         switch (detail) {
             .collapsed => {
-                output.raw(CLR);
-                output.p("   {s}\n", .{clamp(pkg.description, WIDGET_WIDTH - 4)});
-                output.raw(CLR ++ "\n");
-                output.raw(CLR);
-                output.p("   {s}attr{s}  {s}{s}{s}\n", .{ DIM, RST, CYN, clamp(pkg.attr, WIDGET_WIDTH - 12), RST });
+                // Rows 1..n-1: description wrapped on word boundaries across the
+                // remaining detail rows (leaving one for the attr line).
+                const desc = printWrapped(GUTTER, pkg.description, WIDGET_WIDTH - GUTTER.len, DETAIL_LINES - 2);
+                used += desc;
             },
             .loading => {
                 output.raw(CLR);
-                output.p("   {s}loading details...{s}\n", .{ DIM, RST });
-                output.raw(CLR ++ "\n");
-                output.raw(CLR);
-                output.p("   {s}attr{s}  {s}{s}{s}\n", .{ DIM, RST, CYN, clamp(pkg.attr, WIDGET_WIDTH - 12), RST });
+                output.p("{s}{s}loading details...{s}\n", .{ GUTTER, DIM, RST });
+                used += 1;
             },
             .unavailable => {
                 output.raw(CLR);
-                output.p("   {s}details unavailable{s}\n", .{ DIM, RST });
-                output.raw(CLR ++ "\n");
-                output.raw(CLR);
-                output.p("   {s}attr{s}  {s}{s}{s}\n", .{ DIM, RST, CYN, clamp(pkg.attr, WIDGET_WIDTH - 12), RST });
+                output.p("{s}{s}details unavailable{s}\n", .{ GUTTER, DIM, RST });
+                used += 1;
             },
             .meta => |m| {
                 const home = clamp(if (m.homepage.len > 0) m.homepage else "—", WIDGET_WIDTH - 16);
                 const lic = clamp(if (m.license.len > 0) m.license else "—", WIDGET_WIDTH - 16);
                 output.raw(CLR);
-                output.p("   {s}{s:<8}{s}{s}{s}{s}\n", .{ DIM, "home", RST, CYN, home, RST });
+                output.p("{s}{s}{s:<8}{s}{s}{s}{s}\n", .{ GUTTER, DIM, "home", RST, CYN, home, RST });
                 output.raw(CLR);
-                output.p("   {s}{s:<8}{s}{s}\n", .{ DIM, "license", RST, lic });
-                output.raw(CLR);
-                output.p("   {s}{s:<8}{s}{s}{s}{s}\n", .{ DIM, "attr", RST, CYN, clamp(pkg.attr, WIDGET_WIDTH - 16), RST });
+                output.p("{s}{s}{s:<8}{s}{s}\n", .{ GUTTER, DIM, "license", RST, lic });
+                used += 2;
             },
         }
+        // Last row: attr (kept to one line so it never scrolls away).
+        if (used < DETAIL_LINES) {
+            output.raw(CLR);
+            output.p("{s}{s}attr{s}  {s}{s}{s}\n", .{ GUTTER, DIM, RST, CYN, clamp(pkg.attr, WIDGET_WIDTH - 12), RST });
+            used += 1;
+        }
+        // Pad any remaining detail rows so the pane is exactly DETAIL_LINES tall.
+        emitBlanks(DETAIL_LINES - used);
     } else if (count > 0 and mode == .options) {
         const opt = opts[sel];
         output.raw(CLR);
-        output.p("   {s}  {s}{s}{s}\n", .{ clamp(opt.name, WIDGET_WIDTH - 6), DIM, clamp(opt.type_str, 24), RST });
-        output.raw(CLR);
-        output.p("   {s}\n", .{clamp(opt.description, WIDGET_WIDTH - 4)});
-        output.raw(CLR ++ "\n");
-        output.raw(CLR ++ "\n");
+        output.p("{s}{s}  {s}{s}{s}\n", .{ GUTTER, clamp(opt.name, WIDGET_WIDTH - 6), DIM, clamp(opt.type_str, 24), RST });
+        var used: usize = 1;
+        used += printWrapped(GUTTER, opt.description, WIDGET_WIDTH - GUTTER.len, DETAIL_LINES - 1);
+        emitBlanks(DETAIL_LINES - used);
     } else {
-        output.raw(CLR ++ "\n");
-        output.raw(CLR ++ "\n");
-        output.raw(CLR ++ "\n");
-        output.raw(CLR ++ "\n");
+        emitBlanks(DETAIL_LINES);
     }
 
-    // Line 13: blank
+    // Blank row separating the detail pane from the controls.
     output.raw(CLR ++ "\n");
 
-    // Lines 14-17: controls + padding to reach WIDGET_LINES
+    // Controls + padding to reach WIDGET_LINES.
     output.raw(CLR);
     if (mode == .packages) {
-        output.p("   {s} install  {s} info  {s}[up/down]{s} nav  {s} cancel\n", .{
-            keyHint("enter"), keyHint("tab"), DIM, RST, keyHint("esc"),
+        output.p("{s}{s} install  {s} info  {s}[up/down]{s} nav  {s} cancel\n", .{
+            GUTTER, keyHint("enter"), keyHint("tab"), DIM, RST, keyHint("esc"),
         });
     } else {
-        output.p("   {s}[up/down]{s} nav  {s} cancel\n", .{ DIM, RST, keyHint("esc") });
+        output.p("{s}{s}[up/down]{s} nav  {s} cancel\n", .{ GUTTER, DIM, RST, keyHint("esc") });
     }
-    // Padding to reach WIDGET_LINES (18)
-    var pad: usize = 14;
-    while (pad < WIDGET_LINES) : (pad += 1) {
-        output.raw(CLR ++ "\n");
-    }
+    // Padding to reach WIDGET_LINES. Layout budget so far: header(1) + blank(1)
+    // + RESULT_ROWS + rule(1) + DETAIL_LINES + blank(1) + controls(1) =
+    // FIXED_LINES + RESULT_ROWS + DETAIL_LINES = WIDGET_LINES, so this loop only
+    // pads for the default-size fallback when detectSize never ran.
+    const drawn = FIXED_LINES + RESULT_ROWS + DETAIL_LINES;
+    if (drawn < WIDGET_LINES) emitBlanks(WIDGET_LINES - drawn);
 }
 
 // Raw mode enable/disable, including signal-safe restoration on
