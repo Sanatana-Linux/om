@@ -293,6 +293,62 @@ Pink `::` marks om's voice. Green for success. Red for errors. Yellow for warnin
 
 ---
 
+## how om talks to nix
+
+om is a pure Zig binary with **no internal Nix API, no HTTP, no libnix/FFI
+bindings.** It shells out to the `nix`, `nixos-rebuild`, and `ssh` executables
+already on PATH — Nix is present by definition on any machine om runs on. Every
+Nix interaction is "spawn the CLI and parse its output."
+
+### process spawning
+
+Everything routes through two helpers in `exec.zig`:
+
+- `capture()` — `std.process.run(...)`, captures stdout+stderr, returns the exit
+  code. Used for read-only queries like search and eval.
+- `stream()` — `std.process.spawn(...)` with inherited stdio, used for
+  interactive or long-running commands (rebuilds, dropping into `nix shell`).
+
+### remote machines
+
+For a configured remote host, the same Nix commands run *remotely* over SSH. om
+wraps the command in `ssh -o BatchMode=yes [-i key] user@host <cmd>`, shell-quoting
+every argument so the remote shell receives exactly the original argv. Search and
+eval are local-only; remote execution is used for the state-changing commands.
+
+### the nix commands om runs
+
+| om feature                | nix command spawned                                                    |
+| ------------------------- | ---------------------------------------------------------------------- |
+| search index build        | `nix search nixpkgs .* --json --no-update-lock-file [--impure]`          |
+| live search fallback      | `nix search nixpkgs <query> --json --no-update-lock-file --impure`       |
+| index cache keying        | `nix flake metadata nixpkgs --json`                                      |
+| package meta (tab detail) | `nix eval --json nixpkgs#<attr>.meta`                                    |
+| options search            | `nix eval --json --impure --expr '<nixosSystem eval expr>'`              |
+| profile install           | `nix profile install nixpkgs#<attr>`                                     |
+| try a package             | `nix shell nixpkgs#<attr>`                                               |
+| rebuild / apply           | `nixos-rebuild switch/build --flake ...`                                 |
+| rollback / generations    | `nix-env --switch-generation <n>`                                        |
+| flake ops                 | `nix flake update/lock --override-input`, `nix build`, `nix develop`, `nix repl` |
+| home manager              | `nix run home-manager/<branch> -- init`                                  |
+| store management          | `nix store diff-closures`, `nix store gc`                                |
+| registry pinning          | `nix registry pin nixpkgs`                                               |
+
+The `--json` outputs are parsed by hand in `api.zig` — there is no JSON library,
+just substring scans (e.g. `"rev":"`).
+
+### the search cache
+
+Because `nix search` re-evaluates the entire nixpkgs attrset (~seconds) on every
+keystroke, om builds the **full package index once** (`nix search nixpkgs .* --json`),
+caches it to `~/.cache/om/packages-<rev>.json` (plus a compact `.bin` form), keyed by
+the nixpkgs flake revision. On subsequent runs it reads the cache from disk and serves
+searches by in-memory substring matching — invoking Nix again only when the cache is
+missing or stale. The nixpkgs revision marker (`~/.cache/om/rev`) is read first so the
+fast path doesn't even call `nix`.
+
+---
+
 ## built by
 
 **om** is a fork of [nina](https://kepr.uk/nina) by [Asha Software](https://asha.software) — hope in every line of code.
