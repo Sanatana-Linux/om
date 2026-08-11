@@ -226,6 +226,7 @@ fn dispatch(ctx: commands.Ctx, cmd: []const u8) !void {
     if (std.mem.eql(u8, cmd, "pkg")) return commands.pkg(ctx);
     if (std.mem.eql(u8, cmd, "home")) return commands.home(ctx);
     if (std.mem.eql(u8, cmd, "boot")) return commands.boot(ctx);
+    if (std.mem.eql(u8, cmd, "install")) return commands.install(ctx);
     if (std.mem.eql(u8, cmd, "help")) {
         output.help();
         return;

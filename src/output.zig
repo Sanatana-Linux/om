@@ -1126,6 +1126,7 @@ pub fn help() void {
         .{ "gen", "generation management (back/go/history/diff/delete/current/list)" },
         .{ "help", "this message" },
         .{ "home", "home manager commands" },
+        .{ "install <pkg>", "install a package (profile/system/try)" },
         .{ "man [topic]", "open the built-in manual pager" },
         .{ "pkg", "package tools (info/build/cache/why/try/tree/deps/size/path/closure/search/options/develop/repl/run)" },
         .{ "profile", "profile package management (info/install/remove/upgrade)" },
