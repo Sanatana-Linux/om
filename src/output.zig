@@ -1407,6 +1407,7 @@ pub fn pinningRegistry() void {
 // searches are served from the on-disk index and are instant.
 pub fn searchIndexBuilding() void {
     p("{s}building package index (first search can take a moment)...\n", .{hdr()});
+    p("   {s}this evaluates the full nixpkgs tree and can use several GB of RAM{s}\n", .{c(DIM), c(RESET)});
     flush();
 }
 
