@@ -437,11 +437,11 @@ fn renderWidget(query: []const u8, packages: []types.NixPackage, opts: []api.Nix
     const mode_str = if (mode == .packages) "nixpkgs" else "options";
     if (searching) {
         output.p("{s}:: {s}search {s} {s}  {s}searching...{s}\n", .{
-            PKN, RST, mode_str, clamp(query, WIDGET_WIDTH - 24), DIM, RST,
+            PKN, RST, mode_str, clamp(query, WIDGET_WIDTH -| 24), DIM, RST,
         });
     } else {
         output.p("{s}:: {s}search {s} {s}  {s}{d} results{s}\n", .{
-            PKN, RST, mode_str, clamp(query, WIDGET_WIDTH - 24), DIM, count, RST,
+            PKN, RST, mode_str, clamp(query, WIDGET_WIDTH -| 24), DIM, count, RST,
         });
     }
 
@@ -465,13 +465,13 @@ fn renderWidget(query: []const u8, packages: []types.NixPackage, opts: []api.Nix
                     // Every field is clamped so the row never wraps.
                     const name = clamp(pkg.pname, 22);
                     const ver = clamp(pkg.version, 12);
-                    const desc = clamp(pkg.description, WIDGET_WIDTH - 46);
+                    const desc = clamp(pkg.description, WIDGET_WIDTH -| 46);
                     output.p("   {s}{s}{s}{s}   {s}{s}{s}   {s}\n", .{ marker, name_pre, name, name_suf, CYN, ver, RST, desc });
                 },
                 .options => {
                     const opt = opts[idx];
                     const marker = if (selected) PKN ++ "> " ++ RST else "  ";
-                    const name = clamp(opt.name, WIDGET_WIDTH - 20);
+                    const name = clamp(opt.name, WIDGET_WIDTH -| 20);
                     const typ = clamp(opt.type_str, 24);
                     output.p("   {s}{s}   {s}{s}{s}\n", .{ marker, name, DIM, typ, RST });
                 },
@@ -508,7 +508,7 @@ fn renderWidget(query: []const u8, packages: []types.NixPackage, opts: []api.Nix
             .collapsed => {
                 // Rows 1..n-1: description wrapped on word boundaries across the
                 // remaining detail rows (leaving one for the attr line).
-                const desc = printWrapped(GUTTER, pkg.description, WIDGET_WIDTH - GUTTER.len, DETAIL_LINES - 2);
+                const desc = printWrapped(GUTTER, pkg.description, WIDGET_WIDTH -| GUTTER.len, DETAIL_LINES - 2);
                 used += desc;
             },
             .loading => {
@@ -522,8 +522,8 @@ fn renderWidget(query: []const u8, packages: []types.NixPackage, opts: []api.Nix
                 used += 1;
             },
             .meta => |m| {
-                const home = clamp(if (m.homepage.len > 0) m.homepage else "—", WIDGET_WIDTH - 16);
-                const lic = clamp(if (m.license.len > 0) m.license else "—", WIDGET_WIDTH - 16);
+                const home = clamp(if (m.homepage.len > 0) m.homepage else "—", WIDGET_WIDTH -| 16);
+                const lic = clamp(if (m.license.len > 0) m.license else "—", WIDGET_WIDTH -| 16);
                 output.raw(CLR);
                 output.p("{s}{s}{s:<8}{s}{s}{s}{s}\n", .{ GUTTER, DIM, "home", RST, CYN, home, RST });
                 output.raw(CLR);
@@ -534,7 +534,7 @@ fn renderWidget(query: []const u8, packages: []types.NixPackage, opts: []api.Nix
         // Last row: attr (kept to one line so it never scrolls away).
         if (used < DETAIL_LINES) {
             output.raw(CLR);
-            output.p("{s}{s}attr{s}  {s}{s}{s}\n", .{ GUTTER, DIM, RST, CYN, clamp(pkg.attr, WIDGET_WIDTH - 12), RST });
+            output.p("{s}{s}attr{s}  {s}{s}{s}\n", .{ GUTTER, DIM, RST, CYN, clamp(pkg.attr, WIDGET_WIDTH -| 12), RST });
             used += 1;
         }
         // Pad any remaining detail rows so the pane is exactly DETAIL_LINES tall.
@@ -542,9 +542,9 @@ fn renderWidget(query: []const u8, packages: []types.NixPackage, opts: []api.Nix
     } else if (count > 0 and mode == .options) {
         const opt = opts[sel];
         output.raw(CLR);
-        output.p("{s}{s}  {s}{s}{s}\n", .{ GUTTER, clamp(opt.name, WIDGET_WIDTH - 6), DIM, clamp(opt.type_str, 24), RST });
+        output.p("{s}{s}  {s}{s}{s}\n", .{ GUTTER, clamp(opt.name, WIDGET_WIDTH -| 6), DIM, clamp(opt.type_str, 24), RST });
         var used: usize = 1;
-        used += printWrapped(GUTTER, opt.description, WIDGET_WIDTH - GUTTER.len, DETAIL_LINES - 1);
+        used += printWrapped(GUTTER, opt.description, WIDGET_WIDTH -| GUTTER.len, DETAIL_LINES - 1);
         emitBlanks(DETAIL_LINES - used);
     } else {
         emitBlanks(DETAIL_LINES);
