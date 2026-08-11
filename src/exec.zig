@@ -1355,6 +1355,36 @@ pub fn flakeUpdate(io: std.Io, machine: *const types.Machine, gpa: std.mem.Alloc
     return stream(io, machine, gpa, argv.items);
 }
 
+// Update flake.lock in `dir` (the machine's config directory). `nix flake
+// update` operates on the flake in the current directory, so this cd's first —
+// running it from an arbitrary CWD would update (or fail to find) the wrong
+// flake, or silently hit a directory that isn't a flake at all. Preserves the
+// optional input name and extra flags. `dir` is shell-quoted so a path with
+// spaces or metacharacters can't inject into the command.
+pub fn flakeUpdateAt(io: std.Io, machine: *const types.Machine, gpa: std.mem.Allocator, dir: []const u8, input: ?[]const u8, extra_flags: []const []const u8) !u8 {
+    const quoted_dir = try shellQuote(gpa, dir);
+    defer gpa.free(quoted_dir);
+
+    var script: std.ArrayList(u8) = .empty;
+    defer script.deinit(gpa);
+    try script.appendSlice(gpa, "cd ");
+    try script.appendSlice(gpa, quoted_dir);
+    try script.appendSlice(gpa, " && nix flake update");
+    if (input) |inp| {
+        const quoted_input = try shellQuote(gpa, inp);
+        defer gpa.free(quoted_input);
+        try script.appendSlice(gpa, " ");
+        try script.appendSlice(gpa, quoted_input);
+    }
+    for (extra_flags) |f| {
+        const quoted = try shellQuote(gpa, f);
+        defer gpa.free(quoted);
+        try script.appendSlice(gpa, " ");
+        try script.appendSlice(gpa, quoted);
+    }
+    return stream(io, machine, gpa, &.{ "sh", "-c", script.items });
+}
+
 pub fn flakeLockOverrideInput(io: std.Io, machine: *const types.Machine, gpa: std.mem.Allocator, input: []const u8, flake_ref: []const u8) !u8 {
     return stream(io, machine, gpa, &.{ "nix", "flake", "lock", "--override-input", input, flake_ref });
 }
@@ -1606,13 +1636,6 @@ test "flakeOverrideRefFromLock rejects unsupported source types" {
         \\}
     ;
     try std.testing.expectError(error.Internal, flakeOverrideRefFromLock(a, lock, "local", "deadbeef"));
-}
-
-// Update flake inputs for the flake living in `dir` (the config dir). `nix flake
-// update` operates on the flake in the working directory, so we cd there first.
-// Used by `om upgrade` on a flake system in place of nix-channel --update.
-pub fn flakeUpdateAt(io: std.Io, machine: *const types.Machine, gpa: std.mem.Allocator, dir: []const u8) !u8 {
-    return stream(io, machine, gpa, &.{ "sh", "-c", "cd \"$0\" && nix flake update", dir });
 }
 
 // Update flake.lock in /etc/nixos

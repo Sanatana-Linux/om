@@ -946,7 +946,7 @@ pub fn upgrade(ctx: Ctx) !void {
     // rebuild below is already flake-aware via exec.nixosRebuildSwitch.
     if (flakeSystem(ctx)) {
         output.printSubstep("updating flake inputs", .{});
-        _ = exec.flakeUpdateAt(ctx.io, &ctx.machine, ctx.gpa, ctx.machine.config_path) catch {};
+        _ = exec.flakeUpdateAt(ctx.io, &ctx.machine, ctx.gpa, ctx.machine.config_path, null, &.{}) catch {};
     } else {
         output.printSubstep("updating channels", .{});
         _ = exec.channelUpdate(ctx.io, &ctx.machine, ctx.gpa) catch {};
@@ -1959,7 +1959,10 @@ pub fn flake(ctx: Ctx) !void {
     if (std.mem.eql(u8, ctx.sub, "update")) {
         output.flakeUpdateStart();
         const input: ?[]const u8 = if (ctx.args.len > 0) ctx.args[0] else null;
-        _ = try exec.flakeUpdate(ctx.io, &ctx.machine, ctx.gpa, input, ctx.passthrough);
+        // Update the machine's flake, not whatever is in the CWD. Running
+        // `nix flake update` from an arbitrary directory would update (or miss)
+        // the wrong flake and grind through its inputs.
+        _ = try exec.flakeUpdateAt(ctx.io, &ctx.machine, ctx.gpa, ctx.machine.config_path, input, ctx.passthrough);
         output.flakeLockWritten();
         return;
     }
