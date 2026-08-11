@@ -1051,8 +1051,19 @@ pub fn installSelectPrompt(pkg: []const u8, pkg_version: []const u8) void {
     p("{s}{s}{s}{s}  {s}\n\n", .{ hdr(), c(PINK), pkg, c(RESET), pkg_version });
     p("   [i] profile install    {s}instant  no rebuild{s}\n", .{ c(DIM), c(RESET) });
     p("   [s] system install     {s}opens editor  requires apply{s}\n", .{ c(DIM), c(RESET) });
-    p("   [t] try now            {s}exits when done{s}\n\n", .{ c(DIM), c(RESET) });
+    p("   [t] try now            {s}exits when done{s}\n", .{ c(DIM), c(RESET) });
+    p("   [c] copy               {s}copy name to clipboard{s}\n\n", .{ c(DIM), c(RESET) });
     p("   > ", .{});
+    flush();
+}
+
+pub fn installCopied(pkg: []const u8) void {
+    p("{s}{s}{s} copied to clipboard{s}\n\n", .{ c(GREEN), pkg, c(RESET), c(DIM) });
+    flush();
+}
+
+pub fn installNoClipboard() void {
+    p("{s}no clipboard tool found{s} {s}(install wl-clipboard, xclip, or xsel){s}\n\n", .{ c(YELLOW), c(RESET), c(DIM), c(RESET) });
     flush();
 }
 

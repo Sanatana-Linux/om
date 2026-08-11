@@ -2084,6 +2084,61 @@ fn commandExists(gpa: std.mem.Allocator, io: std.Io, name: []const u8) bool {
     };
 }
 
+// Copy `text` to the system clipboard by shelling out to whatever clipboard
+// utility is on PATH: wl-clipboard on Wayland, xclip/xsel on X11. The tool is
+// discovered once and the text is written to its stdin (no shell quoting — the
+// bytes reach the tool verbatim). Returns true on success. If no clipboard
+// tool is installed the copy fails and the caller reports it.
+pub fn copyToClipboard(gpa: std.mem.Allocator, io: std.Io, text: []const u8) bool {
+    const tools = [_][]const u8{ "wl-copy", "xclip", "xsel" };
+    var found: ?[]const u8 = null;
+    for (tools) |t| {
+        if (commandExists(gpa, io, t)) {
+            found = t;
+            break;
+        }
+    }
+    const tool = found orelse return false;
+
+    var argv: [3][]const u8 = undefined;
+    var argc: usize = 0;
+    argv[argc] = tool;
+    argc += 1;
+    if (std.mem.eql(u8, tool, "xclip")) {
+        argv[argc] = "-selection";
+        argc += 1;
+        argv[argc] = "clipboard";
+        argc += 1;
+    }
+
+    var child = std.process.spawn(io, .{
+        .argv = argv[0..argc],
+        .stdin = .pipe,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    }) catch return false;
+
+    if (child.stdin) |in_file| {
+        // Best-effort write; a clipboard tool can exit early if it dislikes the
+        // input, in which case the write fails and we just report a copy miss.
+        var buf: [8192]u8 = undefined;
+        var fw = std.Io.File.Writer.initStreaming(in_file, io, &buf);
+        fw.interface.writeAll(text) catch {
+            child.stdin.?.close(io);
+            _ = child.wait(io) catch {};
+            return false;
+        };
+        fw.interface.flush() catch {};
+        in_file.close(io);
+    }
+
+    const term = child.wait(io) catch return false;
+    return switch (term) {
+        .exited => |code| code == 0,
+        else => false,
+    };
+}
+
 pub fn detectHomeManager(gpa: std.mem.Allocator, io: std.Io, environ: *const std.process.Environ.Map) HomeManagerMode {
     if (commandExists(gpa, io, "home-manager")) return .standalone;
     if (homeNixPath(gpa, environ)) |p| {

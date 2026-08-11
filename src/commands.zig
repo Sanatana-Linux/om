@@ -1268,24 +1268,42 @@ test "editDistance is case-insensitive Levenshtein" {
 // are read here, after the search widget's raw mode is gone, so they don't
 // collide with typing a query.
 fn selectAndInstall(ctx: Ctx, npkg: types.NixPackage) !void {
-    output.installSelectPrompt(npkg.pname, npkg.version);
+    // Choice loop: after a non-destructive action (e.g. copy) return to the
+    // prompt; only install/try/empty break out.
+    while (true) {
+        output.installSelectPrompt(npkg.pname, npkg.version);
 
-    var choice_buf: [8]u8 = undefined;
-    var choice_len: usize = 0;
-    while (choice_len < choice_buf.len) {
-        const n = std.posix.read(std.posix.STDIN_FILENO, choice_buf[choice_len .. choice_len + 1]) catch break;
-        if (n == 0) break;
-        if (choice_buf[choice_len] == '\n') break;
-        choice_len += 1;
-    }
-    const choice = std.mem.trim(u8, choice_buf[0..choice_len], " \t");
+        var choice_buf: [8]u8 = undefined;
+        var choice_len: usize = 0;
+        while (choice_len < choice_buf.len) {
+            const n = std.posix.read(std.posix.STDIN_FILENO, choice_buf[choice_len .. choice_len + 1]) catch break;
+            if (n == 0) break;
+            if (choice_buf[choice_len] == '\n') break;
+            choice_len += 1;
+        }
+        const choice = std.mem.trim(u8, choice_buf[0..choice_len], " \t");
 
-    if (choice.len == 0 or choice[0] == 'i' or choice[0] == 'I') {
-        try profileInstallPkg(ctx, npkg);
-    } else if (choice[0] == 's' or choice[0] == 'S') {
-        try systemInstallPkg(ctx, npkg);
-    } else if (choice[0] == 't' or choice[0] == 'T') {
-        try tryPkg(ctx, npkg);
+        if (choice.len == 0 or choice[0] == 'i' or choice[0] == 'I') {
+            try profileInstallPkg(ctx, npkg);
+            return;
+        } else if (choice[0] == 's' or choice[0] == 'S') {
+            try systemInstallPkg(ctx, npkg);
+            return;
+        } else if (choice[0] == 't' or choice[0] == 'T') {
+            try tryPkg(ctx, npkg);
+            return;
+        } else if (choice[0] == 'c' or choice[0] == 'C') {
+            // Copy the package name to the clipboard, then loop back to the
+            // prompt so the user can still install/try it. The widget's raw
+            // mode is already off here, so a bare letter key is free to act.
+            if (exec.copyToClipboard(ctx.gpa, ctx.io, npkg.pname)) {
+                output.installCopied(npkg.pname);
+            } else {
+                output.installNoClipboard();
+            }
+            continue;
+        }
+        // Unknown key: re-prompt.
     }
 }
 
