@@ -861,26 +861,26 @@ pub fn channelRemove(io: std.Io, machine: *const types.Machine, gpa: std.mem.All
 
 // --- Sync ---
 
-// Sync submodules: loop through the submodules of /etc/nixos, add/commit/push
-// each, then do the same for the main repository itself. Every git step is
-// best-effort (|| true) so one failing submodule doesn't abort the loop.
+// Sync external repos: dynamically loop through the subdirectories of
+// /etc/nixos/external that contain a .git directory, pull/add/commit/push each,
+// then do the same for the main /etc/nixos repository itself. Every git step is
+// best-effort (|| true) so one failing repo doesn't abort the loop.
 pub fn syncSubmodules(io: std.Io, machine: *const types.Machine, gpa: std.mem.Allocator) !u8 {
     // Run a shell script that:
-    // 1. Gets list of submodules from .gitmodules
-    // 2. For each: cd into it, git add -A, git commit -m "om sync: auto-update", git push
-    // 3. Then in the main repo: git add -A, git commit -m "om sync: update submodules", git push
+    // 1. For each subdir of /etc/nixos/external with a .git dir: git pull, git add -A,
+    //    git commit -m "om sync: auto-update", git push
+    // 2. Then in the main repo: git pull, git add -A, git commit -m "om sync: auto-update", git push
     const script =
         \\cd /etc/nixos && \
-        \\if [ -f .gitmodules ]; then \
-        \\  git submodule foreach 'git add -A && git commit -m "om sync: auto-update" || true && git push || true' && \
-        \\  git add -A && \
-        \\  git commit -m "om sync: update submodules" || true && \
-        \\  git push || true; \
-        \\else \
-        \\  git add -A && \
-        \\  git commit -m "om sync: auto-update" || true && \
-        \\  git push || true; \
-        \\fi
+        \\for d in external/*/; do \
+        \\  if [ -d "$d/.git" ]; then \
+        \\    (cd "$d" && git pull || true && git add -A && git commit -m "om sync: auto-update" || true && git push || true); \
+        \\  fi; \
+        \\done && \
+        \\git pull || true && \
+        \\git add -A && \
+        \\git commit -m "om sync: auto-update" || true && \
+        \\git push || true
     ;
     return stream(io, machine, gpa, &.{ "sh", "-c", script });
 }
