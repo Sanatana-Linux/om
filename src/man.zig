@@ -64,13 +64,11 @@ const Block = union(enum) {
     };
 
     const Callout = struct {
-        face: []const u8, // kaomoji
         body: []const u8,
         color: Accent,
     };
 
     const KaomojiCard = struct {
-        face: []const u8,
         name: []const u8,
         desc: []const u8,
         when: []const u8,
@@ -103,7 +101,6 @@ const MAN_PAGE = [_]Section{
             .{ .para = "the goal is simple: NixOS should feel like home. om is one step toward that." },
             .{
                 .callout = .{
-                    .face = "(っ˘ω˘ς)",
                     .color = .gold,
                     .body = "om stays inline at your prompt. search results, install confirmations, diff previews — everything comes to you. you never leave the shell you're already in.",
                 },
@@ -125,7 +122,6 @@ const MAN_PAGE = [_]Section{
             .{ .cmd_block = "$ koh steal kepr.uk/nina && koh build" },
             .{
                 .callout = .{
-                    .face = "(•̀ᴗ•́)و",
                     .color = .mint,
                     .body = "after installing, run `om setup` — it makes sure the nix features om needs are turned on, and on NixOS walks you through the one config line.",
                 },
@@ -151,7 +147,7 @@ const MAN_PAGE = [_]Section{
         .title = "first run",
         .accent = .gold,
         .blocks = &[_]Block{
-            .{ .para = "just type `om help` at the prompt. she will show you every command she knows. (っ˘ω˘ς)" },
+            .{ .para = "just type `om help` at the prompt. she will show you every command she knows." },
             .{ .para = "then try `om hello` to see the machines om has configured, or jump straight to `om search` to find a package." },
             .{ .para = "from here, search for a package, apply a change, or wander through the tips section to see what is possible." },
         },
@@ -168,7 +164,6 @@ const MAN_PAGE = [_]Section{
             .{ .cmd_block = "$ om option logind\n:: search options logind  N results" },
             .{
                 .callout = .{
-                    .face = "( •̀ω•́ )✧",
                     .color = .mint,
                     .body = "keys: [up/down] move through results · enter install the highlighted package · tab toggle package info · esc cancel",
                 },
@@ -214,7 +209,6 @@ const MAN_PAGE = [_]Section{
             },
             .{
                 .callout = .{
-                    .face = "ε-(´∀｀; )",
                     .color = .pink,
                     .body = "generations are immutable snapshots. `om back` always has somewhere to go, and `om go <n>` can reach any point in your history.",
                 },
@@ -261,7 +255,6 @@ const MAN_PAGE = [_]Section{
             .{ .para = "show om's operation log from ~/.om.log. displays the last 50 entries by default. use `--last N` to show more or fewer." },
             .{
                 .callout = .{
-                    .face = "(´▽｀)",
                     .color = .gold,
                     .body = "generations are your safety net. apply freely, knowing you can always go back. `om history` shows the whole story. `om go` takes you there.",
                 },
@@ -275,13 +268,12 @@ const MAN_PAGE = [_]Section{
         .blocks = &[_]Block{
             .{ .para = "om manages your home manager configuration with the same vocabulary as your system. all `om home` commands work with standalone home manager and NixOS module setups. om detects which mode you're using automatically." },
             .{ .para = "bootstrap home manager for the first time. runs `nix run home-manager/<branch> -- init`, which creates ~/.config/home-manager/home.nix with a starter configuration. passing `--switch` activates the configuration immediately." },
-            .{ .cmd_block = "$ om home init --switch\n(っ˘ω˘ς) :: setting up home manager  ~/.config/home-manager\n   -> will activate after init\n\n(˘ᵕ˘) :: home manager ready" },
+            .{ .cmd_block = "$ om home init --switch\n:: setting up home manager  ~/.config/home-manager\n   -> will activate after init\n\n:: home manager ready" },
             .{ .para = "apply your home manager configuration. runs `home-manager switch` under the hood. `--dry` builds without activating." },
             .{ .para = "roll back to the previous home manager generation. list home generations. show what changed between the last two with `home diff`. validate without applying with `home check`. open `home.nix` with `home edit`." },
             .{ .cmd_block = "$ om home packages\n\n:: home packages  kyoshi\n\n   hello    2.12.1\n   jq       1.7.1" },
             .{
                 .callout = .{
-                    .face = "(っ˘ω˘ς)",
                     .color = .lav,
                     .body = "the same apply → diff → back pattern works for your home config, just as it does for your system. om uses the same verbs so you do not have to learn a second vocabulary.",
                 },
@@ -298,7 +290,6 @@ const MAN_PAGE = [_]Section{
             .{ .para = "format configuration.nix with `nixpkgs-fmt`. `--check` reports whether formatting is needed without writing. show the nixos version, kernel version, and uptime of the target machine. list boot entries from the bootloader. launch `nix repl` with nixpkgs loaded." },
             .{
                 .callout = .{
-                    .face = "(ˊᗜˋ)",
                     .color = .pink,
                     .body = "`om edit` uses the `editor` value from ~/.config/om/config (default: vim). set it to your editor of choice and om will use it everywhere.",
                 },
@@ -329,7 +320,6 @@ const MAN_PAGE = [_]Section{
             },
             .{
                 .callout = .{
-                    .face = "(˶ᵔ ᵕ ᵔ˶)",
                     .color = .lav,
                     .body = "om keeps remote work from turning into a whole new personality. same verbs, same little reassurances, same sense of where you are.",
                 },
@@ -358,10 +348,9 @@ const MAN_PAGE = [_]Section{
         .title = "configuration",
         .accent = .gold,
         .blocks = &[_]Block{
-            .{ .para = "om's config file lives at ~/.config/om/config (XDG). the format is plain key=value, one per line. comments start with #. all settings are optional — om works out of the box with no config file. (´ω｀)" },
+            .{ .para = "om's config file lives at ~/.config/om/config (XDG). the format is plain key=value, one per line. comments start with #. all settings are optional — om works out of the box with no config file." },
             .{
                 .callout = .{
-                    .face = "(っ˘ω˘ς)",
                     .color = .gold,
                     .body = "if you have an existing ~/.om.conf from an earlier version, om migrates it to ~/.config/om/config automatically on first run.",
                 },
@@ -377,11 +366,10 @@ const MAN_PAGE = [_]Section{
         .title = "expressions ♡",
         .accent = .pink,
         .blocks = &[_]Block{
-            .{ .para = "om uses a few small kaomoji expressions instead of a mascot. they stay tucked into the UI, show a little feeling, and leave the work itself readable." },
+            .{ .para = "om uses a rotating set of mantras instead of a mascot. each time one is shown it is picked at random, so the same moment rarely repeats. they stay tucked into the UI, show a little feeling, and leave the work itself readable." },
             .{ .para = "the rule is simple: calm most of the time, brighter when something lands, softer when something goes wrong." },
             .{
                 .kaomoji_card = .{
-                    .face = "(˶ᵔ ᵕ ᵔ˶)",
                     .name = "hello",
                     .color = .lav,
                     .desc = "a warm, quiet welcome. om is ready to help and not making a fuss about it.",
@@ -390,7 +378,6 @@ const MAN_PAGE = [_]Section{
             },
             .{
                 .kaomoji_card = .{
-                    .face = "(っ˘ω˘ς)",
                     .name = "starting",
                     .color = .mint,
                     .desc = "settling in and getting to work. something meaningful is beginning.",
@@ -399,7 +386,6 @@ const MAN_PAGE = [_]Section{
             },
             .{
                 .kaomoji_card = .{
-                    .face = "╰(*°▽°*)╯",
                     .name = "relief",
                     .color = .gold,
                     .desc = "something that was broken is working again. a small celebration for persistence.",
@@ -408,7 +394,6 @@ const MAN_PAGE = [_]Section{
             },
             .{
                 .kaomoji_card = .{
-                    .face = "( ˘ᵕ˘ )",
                     .name = "done",
                     .color = .lav,
                     .desc = "calm satisfaction. a rollback landed cleanly and the system is in good hands.",
@@ -417,7 +402,6 @@ const MAN_PAGE = [_]Section{
             },
             .{
                 .kaomoji_card = .{
-                    .face = "( ´ ∀ ` )",
                     .name = "clean",
                     .color = .mint,
                     .desc = "light and tidy. the work is done and things look better than before.",
@@ -426,7 +410,6 @@ const MAN_PAGE = [_]Section{
             },
             .{
                 .kaomoji_card = .{
-                    .face = "( ´ ▽ ` )",
                     .name = "all good",
                     .color = .gold,
                     .desc = "everything checked out. a quiet joy that the system is healthy.",
@@ -435,7 +418,6 @@ const MAN_PAGE = [_]Section{
             },
             .{
                 .kaomoji_card = .{
-                    .face = "(˘ω˘ )",
                     .name = "exiting",
                     .color = .lav,
                     .desc = "a gentle close. nothing went wrong — it's just time to step out.",
@@ -444,7 +426,6 @@ const MAN_PAGE = [_]Section{
             },
             .{
                 .kaomoji_card = .{
-                    .face = "(；ω；)",
                     .name = "sorry",
                     .color = .pink,
                     .desc = "something went sideways, and om is honest about it. details are right there with her.",
@@ -453,7 +434,6 @@ const MAN_PAGE = [_]Section{
             },
             .{
                 .callout = .{
-                    .face = "( ´•̥̥̥ω•̥̥̥` )",
                     .color = .pink,
                     .body = "if you prefer a quieter experience, set `color = false` in your config. om will still show everything — just without the ansi palette.",
                 },
@@ -465,7 +445,7 @@ const MAN_PAGE = [_]Section{
         .title = "tips & recipes",
         .accent = .mint,
         .blocks = &[_]Block{
-            .{ .para = "a few patterns that make daily nixos life a little smoother. (*˘︶˘*)" },
+            .{ .para = "a few patterns that make daily nixos life a little smoother." },
             .{ .para = "a quiet morning with om:" },
             .{ .cmd_block = "# update flake inputs and preview changes\n$ om flake update\n$ om diff\n\n# apply if the diff looks good\n$ om apply" },
             .{ .para = "try a package without committing to it:" },
@@ -478,7 +458,6 @@ const MAN_PAGE = [_]Section{
             .{ .cmd_block = "alias ns=\"om search\"\nalias no=\"om option\"\nalias na=\"om apply\"\nalias nd=\"om diff\"\nalias nb=\"om back\"" },
             .{
                 .callout = .{
-                    .face = "(≧◡≦)",
                     .color = .mint,
                     .body = "when something goes wrong, `om back` is always there. when you're not sure what to try next, `om diff` shows you the picture. and when things go right, om keeps the terminal feeling light.",
                 },
@@ -782,7 +761,7 @@ fn renderBlock(allocator: std.mem.Allocator, out: *std.ArrayList([]const u8), bl
             var first = true;
             for (wrapped) |line| {
                 if (first) {
-                    try out.append(allocator, try std.fmt.allocPrint(allocator, "  {s}┌─ {s}{s}  {s}{s}{s}\n", .{ c(accent.bar), c(accent.fg), block.callout.face, c(TEXT), line, c(RESET) }));
+                    try out.append(allocator, try std.fmt.allocPrint(allocator, "  {s}┌─ {s}{s}  {s}{s}{s}\n", .{ c(accent.bar), c(accent.fg), output.mantra(), c(TEXT), line, c(RESET) }));
                     first = false;
                 } else {
                     try out.append(allocator, try std.fmt.allocPrint(allocator, "  {s}│{s}   {s}{s}{s}\n", .{ c(accent.bar), c(RESET), c(TEXT), line, c(RESET) }));
@@ -793,7 +772,7 @@ fn renderBlock(allocator: std.mem.Allocator, out: *std.ArrayList([]const u8), bl
         .kaomoji_card => {
             const accent = accentColors(block.kaomoji_card.color);
             // Top: kaomoji in its accent color, name to the right
-            try out.append(allocator, try std.fmt.allocPrint(allocator, "  {s}┌── {s}{s}  {s}{s}{s}\n", .{ c(accent.bar), c(accent.fg), block.kaomoji_card.face, c(BOLD), block.kaomoji_card.name, c(RESET) }));
+            try out.append(allocator, try std.fmt.allocPrint(allocator, "  {s}┌── {s}{s}  {s}{s}{s}\n", .{ c(accent.bar), c(accent.fg), output.mantra(), c(BOLD), block.kaomoji_card.name, c(RESET) }));
             const desc_lines = try wrap(allocator, block.kaomoji_card.desc, COL_WIDTH - 10);
             for (desc_lines) |line| {
                 try out.append(allocator, try std.fmt.allocPrint(allocator, "  {s}│{s}   {s}{s}{s}\n", .{ c(accent.bar), c(RESET), c(TEXT), line, c(RESET) }));
@@ -839,7 +818,7 @@ fn drawHeader() void {
     output.raw("\x1b[K");
     output.p("{s}{s} om  man  {s}the whole picture · press ? for keys · q to leave{s}\n", .{ c(BG_BAR), c(PINK), c(TEXT), c(RESET) });
     output.raw("\x1b[K");
-    output.p("{s}    {s}(˶ᵔ ᵕ ᵔ˶){s}  ready when you are{s}\n", .{ c(BG_HI), c(PINK), c(RESET), c(RESET) });
+    output.p("{s}    {s}{s}{s}  ready when you are{s}\n", .{ c(BG_HI), c(PINK), output.mantra(), c(RESET), c(RESET) });
     output.raw("\x1b[K");
     output.p("{s}{s}{s}\n", .{ c(TEXT_DIM), "─" ** 80, c(RESET) });
 }

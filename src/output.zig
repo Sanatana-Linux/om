@@ -13,21 +13,80 @@ const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
 const RED = "\x1b[31m";
 const CYAN = "\x1b[36m";
+const ORANGE = "\x1b[38;2;255;165;0m";
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
 
-// kaomoji constants — all kaomoji defined here, never inlined elsewhere. Rare
-// and earned: each marks one genuine moment and never repeats in one output
-// block. They are plain text, not ANSI, so they survive pipes and NO_COLOR.
-const KAO_FACE = "(˶ᵔ ᵕ ᵔ˶)  "; // hello — her face
-const KAO_COZY = "(っ˘ω˘ς)  "; // apply start
-const KAO_EXCITED = "╰(*°▽°*)╯  "; // apply success after a failure this session
-const KAO_GENTLE = "( ˘ᵕ˘ )  "; // back done
-const KAO_CONTENT = "( ´ ∀ ` )  "; // clean freed
-const KAO_HAPPY = "( ´ ▽ ` )  "; // doctor all clear / mood all good
-const KAO_SLEEPY = "(˘ω˘ )  "; // try / develop exit
-const KAO_READY = "( •̀ᴗ•́ )  "; // update start
-const KAO_SAD = "(；ω；)  "; // network or ssh errors only — never user typos
+// Mantra rotation — all mantras live here, never inlined elsewhere. Each time
+// one is needed it is picked at random from this array, so the same moment
+// rarely repeats. The devanagari and its latin transliteration are separated by
+// an orange `::` (matching om's header separator) applied at render time, so
+// the mantra text itself stays plain and survives pipes and NO_COLOR.
+const Mantra = struct {
+    devanagari: []const u8,
+    latin: []const u8,
+};
+
+const MANTRAS = [_]Mantra{
+    .{ .devanagari = "ॐ नमः शिवाय", .latin = "Om Namah Shivaya" },
+    .{ .devanagari = "ॐ नमो भगवते रूद्राय", .latin = "Om Namo Bhagwate Rudraay" },
+    .{ .devanagari = "ॐ तत्पुरुषाय विद्महे महादेवाय धीमहि तन्नो रुद्रः प्रचोदयात", .latin = "Om Tatpurushaay Vidmahe Vidmahe Mahadevaay Deemahi Tanno Rudrah Prachodayat" },
+    .{ .devanagari = "हर हर महादेव", .latin = "Hara Hara Mahadeva" },
+    .{ .devanagari = "ॐ त्र्यम्बकं यजामहे", .latin = "OM TRYAMBAKAM YAJAMAHE" },
+    .{ .devanagari = "ॐ दुं दुर्गायै नमः", .latin = "OM DUM DURGAYEI NAMAHA" },
+    .{ .devanagari = "ॐ ऐं ह्रीं क्लीं चामुण्डायै विच्चे", .latin = "OM AIM HRIM KLIM CHAMUNDAYEI VICHCHE" },
+    .{ .devanagari = "ॐ पार्वत्यै नमः", .latin = "OM PARVATYAI NAMAHA" },
+    .{ .devanagari = "ॐ ह्रीं श्रीं परमेश्वरि पार्वत्यै नमः", .latin = "OM HRIM SHRIM PARAMESHVARI PARVATYAI NAMAHA" },
+    .{ .devanagari = "ॐ गं गणपतये नमः", .latin = "OM GAM GANAPATAYE NAMAHA" },
+    .{ .devanagari = "ॐ नमो नारायणाय", .latin = "OM NAMO NARAYANAYA" },
+    .{ .devanagari = "ॐ विष्णवे नमः", .latin = "OM VISHNAVE NAMAHA" },
+    .{ .devanagari = "ॐ श्रीं महालक्ष्म्यै नमः", .latin = "OM SHRIM MAHALAKSHMYAI NAMAHA" },
+    .{ .devanagari = "ॐ ह्रीं श्रीं लक्ष्मी भ्यो नमः", .latin = "OM HRIM SHRIM LAKSHMI BHYO NAMAHA" },
+    .{ .devanagari = "ॐ ब्रह्मणे नमः", .latin = "OM BRAHMAYEI NAMAHA" },
+    .{ .devanagari = "ॐ भैरवाय नमः", .latin = "OM BHAIRAVAYA NAMAHA" },
+    .{ .devanagari = "ॐ ह्रीं भैरवाय नमः", .latin = "OM HRIM BHAIRAVAYA NAMAHA" },
+    .{ .devanagari = "ॐ क्रीं कालिकायै नमः", .latin = "OM KRIM KALIKAYEI NAMAHA" },
+    .{ .devanagari = "ॐ ऐं सरस्वत्यै नमः", .latin = "OM AIM SARASWATYAI NAMAHA" },
+    .{ .devanagari = "ॐ ह्रीं ऐं सरस्वत्यै नमः", .latin = "OM HRIM AIM SARASWATYAI NAMAHA" },
+    .{ .devanagari = "ॐ हनुमते नमः", .latin = "OM HANUMATE NAMAHA" },
+    .{ .devanagari = "ॐ रामाय नमः", .latin = "OM RAMAYA NAMAHA" },
+    .{ .devanagari = "ॐ कृष्णाय नमः", .latin = "OM KRISHNAYA NAMAHA" },
+    .{ .devanagari = "ॐ अग्नये नमः", .latin = "OM AGNAYEI NAMAHA" },
+    .{ .devanagari = "ॐ सूर्याय नमः", .latin = "OM SURYAYA NAMAHA" },
+    .{ .devanagari = "ॐ ह्रीं ह्रां सः सूर्याय नमः", .latin = "OM HRIM HRAM SAH SURYAYA NAMAHA" },
+    .{ .devanagari = "ॐ चन्द्राय नमः", .latin = "OM CHANDRAYA NAMAHA" },
+    .{ .devanagari = "ॐ यमाय नमः", .latin = "OM YAMAYA NAMAHA" },
+    .{ .devanagari = "ॐ इन्द्राय नमः", .latin = "OM INDRAYA NAMAHA" },
+    .{ .devanagari = "ॐ गुरुवे नमः", .latin = "OM GURUVE NAMAHA" },
+    .{ .devanagari = "ॐ शनैश्चराय नमः", .latin = "OM SHANAISHCHARAYA NAMAHA" },
+    .{ .devanagari = "ॐ मङ्गलाय नमः", .latin = "OM MANGALAYA NAMAHA" },
+    .{ .devanagari = "ॐ बुधाय नमः", .latin = "OM BUDHAYA NAMAHA" },
+    .{ .devanagari = "ॐ बृहस्पतये नमः", .latin = "OM BRIHASPATAYE NAMAHA" },
+    .{ .devanagari = "ॐ शुक्राय नमः", .latin = "OM SHUKRAYA NAMAHA" },
+    .{ .devanagari = "ॐ नागेन्द्राय नमः", .latin = "OM NAGENDRAYA NAMAHA" },
+    .{ .devanagari = "ॐ गरुडाय नमः", .latin = "OM GARUDAYA NAMAHA" },
+    .{ .devanagari = "ॐ शेषाय नमः", .latin = "OM SHESHAYA NAMAHA" },
+    .{ .devanagari = "ॐ स्कन्दाय नमः", .latin = "OM SKANDAYA NAMAHA" },
+    .{ .devanagari = "ॐ अय्यप्पाय नमः", .latin = "OM AYYAPPAYA NAMAHA" },
+};
+
+// Orange `::` separator between devanagari and transliteration, matching the
+// `::` used elsewhere in om's output lines.
+const MANTRA_SEP = ORANGE ++ "::" ++ RESET;
+
+var mantra_buf: [512]u8 = undefined;
+
+// Returns a randomly selected mantra with the orange `::` separator, written
+// into a static buffer. The returned slice is valid until the next call. A
+// trailing two spaces keeps it usable as a line prefix (matching the old
+// kaomoji constants). Requires init() to have been called (so `_io` is set).
+pub fn mantra() []const u8 {
+    var seed: [8]u8 = undefined;
+    _io.random(&seed);
+    const idx = std.mem.readInt(u64, &seed, .little) % MANTRAS.len;
+    const m = MANTRAS[idx];
+    return std.fmt.bufPrint(&mantra_buf, "{s} {s} {s}  ", .{ m.devanagari, MANTRA_SEP, m.latin }) catch m.devanagari;
+}
 
 // Exported for TUI use (search.zig references these to avoid \x1b in that file)
 pub const C_PINK = PINK;
@@ -341,7 +400,7 @@ pub fn printError(message: []const u8, detail: ?[]const u8, suggestion: ?[]const
 // kaomoji signals "this is on the machine, not on you" — never used for typos or
 // not-found errors, which go through printError.
 pub fn printSystemError(message: []const u8, detail: ?[]const u8, suggestion: ?[]const u8) void {
-    p("{s}{s}{s}\n", .{ KAO_SAD, if (color_enabled) ERR_C else ERR_P, message });
+    p("{s}{s}{s}\n", .{ mantra(), if (color_enabled) ERR_C else ERR_P, message });
     if (detail) |d| p("   {s}{s}{s}\n", .{ c(DIM), d, c(RESET) });
     if (suggestion) |s| p("   {s}-> {s}{s}\n", .{ c(CYAN), s, c(RESET) });
 }
@@ -351,13 +410,13 @@ pub fn printWarning(message: []const u8) void {
 }
 
 // Display a translated build error through the 3-layer pipeline format.
-// is_system = true  → (；ω；) kaomoji prefix (machine's fault, not the user's)
+// is_system = true  → ॐ नमः शिवाय । Om Namah Shivaya kaomoji prefix (machine's fault, not the user's)
 // suggestion may contain '\n'-separated lines; the first gets "-> " and the
 // rest are indented with "   " so the secondary "nix log ..." line lines up.
 pub fn buildError(err: errors.TranslatedError) void {
     if (err.is_system) {
-        // KAO_SAD already includes trailing spaces: "(；ω；)  "
-        p("{s}{s}{s}\n\n", .{ KAO_SAD, if (color_enabled) ERR_C else ERR_P, err.title });
+        // mantra() already includes trailing spaces: "ॐ नमः शिवाय । Om Namah Shivaya  "
+        p("{s}{s}{s}\n\n", .{ mantra(), if (color_enabled) ERR_C else ERR_P, err.title });
     } else {
         p("{s}{s}\n\n", .{ if (color_enabled) ERR_C else ERR_P, err.title });
     }
@@ -608,14 +667,14 @@ pub fn confirmDefaultNo(question: []const u8) bool {
 // --- Apply / rebuild ---
 
 pub fn applyStart(machine: []const u8) void {
-    p("{s}{s}rebuilding {s}...\n", .{ KAO_COZY, hdr(), machine });
+    p("{s}{s}rebuilding {s}...\n", .{ mantra(), hdr(), machine });
 }
 
 // after_failure: true only when the previous apply this session failed and this
 // one succeeded — the one moment that earns the excited kaomoji. Routine
 // successes show no kaomoji.
 pub fn applyDone(gen: u32, elapsed_ms: u64, after_failure: bool) void {
-    const face = if (after_failure) KAO_EXCITED else "";
+    const face = if (after_failure) mantra() else "";
     const secs = @as(f64, @floatFromInt(elapsed_ms)) / 1000.0;
     if (elapsed_ms >= 1000) {
         p("{s}{s}generation {s}{d}{s}  {s}[{d:.1}s]{s}\n", .{ face, hdr(), c(BOLD), gen, c(RESET), c(DIM), secs, c(RESET) });
@@ -672,7 +731,7 @@ pub fn alreadyOldest() void {
 // Like generationDone but for `back` specifically — a successful rollback earns
 // the gentle kaomoji. `go` keeps the plain generationDone line.
 pub fn backDone(n: u32) void {
-    p("{s}{s}done  gen {s}{d}{s}\n", .{ KAO_GENTLE, hdr(), c(BOLD), n, c(RESET) });
+    p("{s}{s}done  gen {s}{d}{s}\n", .{ mantra(), hdr(), c(BOLD), n, c(RESET) });
 }
 
 // --- History ---
@@ -705,9 +764,9 @@ pub fn cleanNothing(machine: []const u8, total: u32) void {
 pub fn cleanDoneFreed(freed_bytes: u64) void {
     const freed_gb = @as(f64, @floatFromInt(freed_bytes)) / (1024.0 * 1024.0 * 1024.0);
     if (freed_bytes > 0) {
-        p("{s}{s}freed {d:.1} GB{s}\n", .{ KAO_CONTENT, hdr(), freed_gb, c(RESET) });
+        p("{s}{s}freed {d:.1} GB{s}\n", .{ mantra(), hdr(), freed_gb, c(RESET) });
     } else {
-        p("{s}{s}nothing to free{s}\n", .{ KAO_CONTENT, hdr(), c(RESET) });
+        p("{s}{s}nothing to free{s}\n", .{ mantra(), hdr(), c(RESET) });
     }
 }
 
@@ -801,7 +860,7 @@ pub fn doctorSummary(warnings: u32, failures: u32) void {
     } else if (warnings > 0) {
         p("{s}{d} warnings\n", .{ hdr(), warnings });
     } else {
-        p("{s}{s}{s}all good{s}\n", .{ KAO_HAPPY, hdr(), c(GREEN), c(RESET) });
+        p("{s}{s}{s}all good{s}\n", .{ mantra(), hdr(), c(GREEN), c(RESET) });
     }
 }
 
@@ -886,7 +945,7 @@ pub fn developStart(pkgs: []const []const u8) void {
 }
 
 pub fn developDone() void {
-    p("{s}{s}back\n", .{ KAO_SLEEPY, hdr() });
+    p("{s}{s}back\n", .{ mantra(), hdr() });
 }
 
 // --- Info ---
@@ -1031,7 +1090,7 @@ pub fn mood(machine: []const u8, state: []const u8, gen: u32, age: []const u8, s
     const healthy = std.mem.eql(u8, state, "running");
     const verdict = if (healthy) "all good" else state;
     const color = if (healthy) GREEN else YELLOW;
-    const face = if (healthy) KAO_HAPPY else "";
+    const face = if (healthy) mantra() else "";
     p("{s}{s}{s}  {s}{s}{s}\n", .{ face, hdr(), machine, c(color), verdict, c(RESET) });
     if (age.len > 0 or size.len > 0) {
         p("   generation {d}, last applied {s}, {s} system closure\n", .{ gen, age, size });
@@ -1076,7 +1135,7 @@ pub fn tryExitHint() void {
 }
 
 pub fn tryDone() void {
-    p("{s}{s}back\n", .{ KAO_SLEEPY, hdr() });
+    p("{s}{s}back\n", .{ mantra(), hdr() });
 }
 
 // --- List ---
@@ -1101,7 +1160,7 @@ pub fn blankLine() void {
 // --- Hello ---
 
 pub fn hello(machines: []const types.Machine) void {
-    p("{s}{s}om\n\n", .{ KAO_FACE, hdr() });
+    p("{s}{s}om\n\n", .{ mantra(), hdr() });
     if (machines.len == 0) {
         p("   {s}no machines configured{s}\n", .{ c(DIM), c(RESET) });
         p("   {s}run om setup or edit ~/.config/om/config to add one{s}\n", .{ c(DIM), c(RESET) });
@@ -1219,7 +1278,7 @@ pub fn treeStart(pkg: []const u8) void {
 // --- Self-update (om update) ---
 
 pub fn updateSelfStart() void {
-    p("{s}{s}checking for updates\n", .{ KAO_READY, hdr() });
+    p("{s}{s}checking for updates\n", .{ mantra(), hdr() });
 }
 
 pub fn updateSelfCurrent(ver: []const u8) void {
@@ -1560,7 +1619,7 @@ pub fn homeModuleManaged() void {
 }
 
 pub fn homeApplyStart(machine: []const u8) void {
-    p("{s}{s}applying home config  {s}\n", .{ KAO_COZY, hdr(), machine });
+    p("{s}{s}applying home config  {s}\n", .{ mantra(), hdr(), machine });
 }
 
 pub fn homeApplyDone(gen: u32, elapsed_ms: u64) void {
@@ -1602,7 +1661,7 @@ pub fn homeBackStart(machine: []const u8, from: u32, to: u32) void {
 }
 
 pub fn homeBackDone(n: u32) void {
-    p("{s}{s}done  gen {s}{d}{s}\n", .{ KAO_GENTLE, hdr(), c(BOLD), n, c(RESET) });
+    p("{s}{s}done  gen {s}{d}{s}\n", .{ mantra(), hdr(), c(BOLD), n, c(RESET) });
 }
 
 pub fn homeHistoryHeader(machine: []const u8) void {
@@ -1651,7 +1710,7 @@ pub fn homeAttrFallback(ref: []const u8) void {
 pub fn homeInitStart(switch_on_init: bool, dir: ?[]const u8) void {
     const target = dir orelse "~/.config/home-manager";
     if (switch_on_init) {
-        p("{s}{s}setting up home manager  {s}{s}{s}\n", .{ KAO_COZY, hdr(), c(PINK), target, c(RESET) });
+        p("{s}{s}setting up home manager  {s}{s}{s}\n", .{ mantra(), hdr(), c(PINK), target, c(RESET) });
         p("   {s}-> will activate after init{s}\n", .{ c(DIM), c(RESET) });
     } else {
         p("{s}initialising home manager  {s}{s}{s}\n", .{ hdr(), c(PINK), target, c(RESET) });
@@ -1661,7 +1720,7 @@ pub fn homeInitStart(switch_on_init: bool, dir: ?[]const u8) void {
 
 pub fn homeInitDone(switch_on_init: bool) void {
     if (switch_on_init) {
-        p("{s}{s}home manager ready\n", .{ KAO_GENTLE, hdr() });
+        p("{s}{s}home manager ready\n", .{ mantra(), hdr() });
     } else {
         p("{s}done  edit home.nix and run {s}om home apply{s} when ready\n", .{ hdr(), c(BOLD), c(RESET) });
     }
@@ -1678,7 +1737,7 @@ pub fn homeInitExists(path: []const u8) void {
 // --- First-run wizard ---
 
 pub fn firstRunBanner() void {
-    p("{s}{s}om \u{2014} first run\n\n", .{ KAO_FACE, hdr() });
+    p("{s}{s}om \u{2014} first run\n\n", .{ mantra(), hdr() });
 }
 
 pub fn firstRunNoConfig() void {
